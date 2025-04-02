@@ -1,6 +1,9 @@
 # Forkable streams
 
-An exercise in making streams forkable without spawning tasks.
+The main trait in this library allows you to convert non-cloneable streams into cloneable streams. The only requirement is that the item type of the base-stream is cloneable.
+
+
+
 
 
 ## Usage 
@@ -36,8 +39,9 @@ fn main() {
 
 ## Contributing
 
+This was an exercise in making streams forkable without spawning tasks. First time using `Waker`.
 
-Install `rustup`.
+Install `rustup`. Rust unit and integration tests with:
 
 ```bash
 cargo test

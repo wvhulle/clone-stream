@@ -2,9 +2,10 @@
 name = "forked_stream"
 version = "0.0.1"
 edition = "2024"
+description = "A trait that allows you convert Streams from the futures crate into cloneable streams."
+license = "MIT"
 
 [dependencies]
-
 futures = "0.3.31"
 log = "0.4.27"
 
