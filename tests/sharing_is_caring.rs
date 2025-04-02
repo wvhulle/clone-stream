@@ -1,8 +1,10 @@
+mod mock;
+
 use std::{task::Poll, time::Duration};
 
-use forked_stream::new_concurrent_setup;
 use futures::SinkExt;
 use log::info;
+use mock::new_concurrent_setup;
 use tokio::time::sleep;
 
 #[tokio::test]

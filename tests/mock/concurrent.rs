@@ -1,13 +1,11 @@
-#![allow(unused_imports)]
-
 use std::{task::Poll, time::Duration};
 
+use forked_stream::ForkedStream;
 use futures::{FutureExt, Stream, StreamExt};
 use log::info;
 use tokio::{task::JoinHandle, time::timeout};
 
-use super::{single_task::new_sender_and_shared_stream, test_log::log_init};
-use crate::{ForkedStream, SpscSender};
+use super::{SpscSender, single_task::new_sender_and_shared_stream, test_log::log_init};
 
 pub struct ConcurrentSetup<BaseStream>
 where

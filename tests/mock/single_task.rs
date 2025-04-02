@@ -1,6 +1,7 @@
+use forked_stream::{ForkStream, ForkedStream};
 use futures::Stream;
 
-use crate::{ForkStream, ForkedStream, SpscSender, spsc_channel};
+use super::{SpscSender, spsc_channel};
 
 pub fn new_sender_and_shared_stream<T>() -> (SpscSender<T>, ForkedStream<impl Stream<Item = T>>)
 where

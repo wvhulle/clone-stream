@@ -1,5 +1,7 @@
-use forked_stream::{log_init, new_sender_and_shared_stream};
+mod mock;
+
 use futures::{FutureExt, StreamExt};
+use mock::{log_init, new_sender_and_shared_stream};
 
 #[test]
 fn construction_does_not_panic() {
