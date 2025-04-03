@@ -5,26 +5,7 @@ repository = "https://github.com/wvhulle/forked_stream"
 version = "0.0.2"
 edition = "2024"
 description = "A trait that allows you convert Streams from the futures crate into cloneable streams."
-keywords = [
-    "future",
-    "async",
-    "futures",
-    "stream",
-    "cloneable",
-    "forked",
-    "Clone",
-    "split",
-    "share",
-    "waker",
-    "pin",
-    "poll",
-    "async",
-    "Iterator",
-    "AsyncIterator",
-    "connectivity",
-    "networking",
-    "streaming",
-]
+keywords = ["future", "async", "stream", "Clone", "async"]
 license = "MIT"
 
 [lints.clippy]
