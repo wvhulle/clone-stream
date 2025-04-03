@@ -10,6 +10,9 @@ The main trait in this library allows you to convert non-cloneable streams into 
 
 ```bash
 cargo add --git https://github.com/wvhulle/forked_stream
+# Or
+cargo add forked_stream
+
 cargo add futures
 ```
 
