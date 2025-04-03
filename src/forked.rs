@@ -18,21 +18,18 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     pub output_index: ForkId,
-    clone_bridge: Arc<Mutex<ForkBridge<BaseStream>>>,
+    fork_bridge: Arc<ForkBridge<BaseStream>>,
 }
 
 impl<BaseStream> From<ForkBridge<BaseStream>> for ForkedStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fn from(mut bridge: ForkBridge<BaseStream>) -> Self {
-        let free_output_index = bridge.free_output_index();
-        bridge
-            .outputs
-            .insert(free_output_index, ForkStage::default());
+    fn from(bridge: ForkBridge<BaseStream>) -> Self {
+        let free_output_index = bridge.new_fork();
         Self {
             output_index: free_output_index,
-            clone_bridge: Arc::new(Mutex::new(bridge)),
+            fork_bridge: Arc::new(bridge),
         }
     }
 }
@@ -42,12 +39,10 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn clone(&self) -> Self {
-        let mut bridge = self.clone_bridge.lock().unwrap();
-        let free_index = bridge.free_output_index();
-        bridge.outputs.insert(free_index, ForkStage::default());
+        let free_index = self.fork_bridge.as_ref().new_fork();
         Self {
             output_index: free_index,
-            clone_bridge: self.clone_bridge.clone(),
+            fork_bridge: self.fork_bridge.clone(),
         }
     }
 }
@@ -60,8 +55,8 @@ where
 
     fn poll_next(self: Pin<&mut Self>, new_context: &mut Context) -> Poll<Option<Self::Item>> {
         trace!("Forked stream {} is being polled.", self.output_index);
-        let mut bridge = self.clone_bridge.lock().unwrap();
 
-        bridge.handle_fork(self.output_index, new_context)
+        self.fork_bridge
+            .handle_fork(self.output_index, new_context.waker())
     }
 }

@@ -22,7 +22,7 @@ pub struct Waiting {
 /// Either a fork is still waiting to wake up, or it is already waking up.
 pub enum ForkStage<Item> {
     Waiting(Waiting),
-    WakingUp(Waking<Item>),
+    Waking(Waking<Item>),
 }
 
 impl<Item> Default for ForkStage<Item> {

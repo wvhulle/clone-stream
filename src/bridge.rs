@@ -1,9 +1,11 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     pin::Pin,
+    sync::Mutex,
     task::{Context, Poll, Waker},
 };
 
+use dashmap::DashMap;
 use futures::{Stream, StreamExt};
 use log::trace;
 
@@ -15,89 +17,105 @@ pub(crate) struct ForkBridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    pub(super) stream: Pin<Box<BaseStream>>,
-    pub(super) outputs: BTreeMap<ForkId, ForkStage<BaseStream::Item>>,
+    pub(super) stream: Mutex<Pin<Box<BaseStream>>>,
+    pub(super) outputs: DashMap<ForkId, ForkStage<BaseStream::Item>>,
 }
 
 impl<BaseStream> ForkBridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    pub fn free_output_index(&self) -> ForkId {
-        if self.outputs.is_empty() {
-            0
-        } else {
-            self.outputs.keys().max().unwrap() + 1
-        }
+    pub fn new_fork(&self) -> ForkId {
+        let entry = self
+            .outputs
+            .entry(if self.outputs.is_empty() {
+                0
+            } else {
+                self.outputs.iter().map(|e| *e.pair().0).max().unwrap() + 1
+            })
+            .or_default();
+
+        *entry.key()
     }
 
-    pub fn handle_fork(
-        &mut self,
-        output_index: ForkId,
-        new_context: &mut Context,
-    ) -> Poll<Option<BaseStream::Item>> {
-        let mut status = self.outputs.entry(output_index).or_default();
-
-        match &mut status {
-            ForkStage::WakingUp(waking) => {
-                let item = waking.processed.clone();
-                waking
-                    .remaining
-                    .retain(|already_waiting| !already_waiting.will_wake(new_context.waker()));
-
-                if waking.remaining.is_empty() {
-                    self.outputs.remove(&output_index);
-                }
-
-                Poll::Ready(item)
-            }
-            ForkStage::Waiting(_) => self.check_base_stream(output_index, new_context.waker()),
-        }
+    fn new_fork_waker(&self, waker: &Waker) {
+        self.outputs
+            .entry(if self.outputs.is_empty() {
+                0
+            } else {
+                self.outputs.iter().map(|e| *e.pair().0).max().unwrap() + 1
+            })
+            .or_insert(ForkStage::Waiting(Waiting {
+                suspended_tasks: VecDeque::from([waker.clone()]),
+            }));
     }
 
-    pub(super) fn check_base_stream(
-        &mut self,
+    pub(super) fn handle_fork(
+        &self,
         polled_output: ForkId,
         current_task: &Waker,
     ) -> Poll<Option<BaseStream::Item>> {
-        match self
+        trace!("The input stream is being polled.");
+        let poll = self
             .stream
-            .poll_next_unpin(&mut Context::from_waker(current_task))
-        {
+            .lock()
+            .unwrap()
+            .poll_next_unpin(&mut Context::from_waker(current_task));
+        trace!("The input stream has been polled.");
+        match poll {
             Poll::Ready(maybe_item) => {
                 trace!(
                     "The input stream has resolved an item. Emitting it to all output streams. Not storing any waker for the current fork {polled_output}."
                 );
 
-                self.notify_all_other_waiters_of_all_forks(
-                    polled_output,
-                    maybe_item.as_ref(),
-                    current_task,
-                );
+                self.notify_all_other_waiters_of_all_forks(polled_output, maybe_item.as_ref());
 
                 Poll::Ready(maybe_item)
             }
             Poll::Pending => {
-                trace!(
-                    "The input stream is not ready yet. Marking fork {polled_output} as waiting."
-                );
-                self.outputs.insert(
-                    polled_output,
-                    ForkStage::Waiting(Waiting {
-                        suspended_tasks: VecDeque::from([current_task.clone()]),
-                    }),
-                );
+                if self.outputs.contains_key(&polled_output) {
+                    let mut entry = self.outputs.get_mut(&polled_output).unwrap();
+                    let mut status = entry.value_mut();
 
-                Poll::Pending
+                    match &mut status {
+                        ForkStage::Waking(waking) => {
+                            trace!(
+                                "The input stream did not yield any new value and fork {polled_output} was waking."
+                            );
+
+                            waking.remaining.retain(|w| !w.will_wake(current_task));
+
+                            Poll::Ready(waking.processed.clone())
+                        }
+                        ForkStage::Waiting(waiting) => {
+                            if !waiting
+                                .suspended_tasks
+                                .iter()
+                                .any(|w| w.will_wake(current_task))
+                            {
+                                trace!("This task will be woken up in the future..");
+                                waiting.suspended_tasks.push_back(current_task.clone());
+                            }
+
+                            Poll::Pending
+                        }
+                    }
+                } else {
+                    trace!(
+                        "The input stream is not ready yet. Marking fork {polled_output} as waiting."
+                    );
+                    self.new_fork_waker(current_task);
+
+                    Poll::Pending
+                }
             }
         }
     }
 
-    pub fn notify_all_other_waiters_of_all_forks(
-        &mut self,
+    fn notify_all_other_waiters_of_all_forks(
+        &self,
         id: ForkId,
         maybe_item: Option<&BaseStream::Item>,
-        current_waker: &Waker,
     ) {
         trace!("A poll on the output stream {id} triggered a result from the input stream.");
 
@@ -110,40 +128,41 @@ where
             );
 
             self.outputs.retain(|_, status| match status {
-                ForkStage::WakingUp(wakers) => !wakers.remaining.is_empty(),
+                ForkStage::Waking(wakers) => !wakers.remaining.is_empty(),
                 ForkStage::Waiting(_) => true,
             });
 
-            self.outputs.values_mut().for_each(|status| match status {
-                ForkStage::Waiting(waiting) => {
-                    trace!("Found a waiting output stream. Waking it up.");
-                    let remaining_tasks = waiting
-                        .suspended_tasks
-                        .iter()
-                        .filter(|waiting_taks| !waiting_taks.will_wake(current_waker))
-                        .cloned()
-                        .collect::<VecDeque<_>>();
+            self.outputs.iter_mut().for_each(|mut entry| {
+                let (fork_id, status) = entry.pair_mut();
+                match status {
+                    ForkStage::Waiting(waiting) => {
+                        trace!("Fork {fork_id} was waiting for a new item.");
 
-                    *status = ForkStage::WakingUp(Waking {
-                        processed: maybe_item.cloned(),
-                        remaining: remaining_tasks.clone(),
-                    });
-                    remaining_tasks.into_iter().for_each(Waker::wake);
-                }
-                ForkStage::WakingUp(waking_up) => {
-                    let remaining: VecDeque<_> = waking_up
-                        .remaining
-                        .clone()
-                        .into_iter()
-                        .filter(|w| !w.will_wake(current_waker))
-                        .collect();
+                        let remaining = waiting.suspended_tasks.clone();
 
-                    remaining.iter().for_each(Waker::wake_by_ref);
+                        *status = ForkStage::Waking(Waking {
+                            processed: maybe_item.cloned(),
+                            remaining: remaining.clone(),
+                        });
 
-                    *status = ForkStage::WakingUp(Waking {
-                        processed: maybe_item.cloned(),
-                        remaining: remaining.clone(),
-                    });
+                        trace!(
+                            "The remaining {} wakers for fork {} are woken up.",
+                            remaining.len(),
+                            fork_id
+                        );
+
+                        remaining.iter().for_each(Waker::wake_by_ref);
+                    }
+                    ForkStage::Waking(waking_up) => {
+                        let remaining: VecDeque<_> = waking_up.remaining.clone();
+
+                        remaining.iter().for_each(Waker::wake_by_ref);
+
+                        *status = ForkStage::Waking(Waking {
+                            processed: maybe_item.cloned(),
+                            remaining: remaining.clone(),
+                        });
+                    }
                 }
             });
         }
@@ -156,8 +175,8 @@ where
 {
     fn from(stream: BaseStream) -> Self {
         Self {
-            stream: Box::pin(stream),
-            outputs: BTreeMap::new(),
+            stream: Mutex::new(Box::pin(stream)),
+            outputs: DashMap::new(),
         }
     }
 }
