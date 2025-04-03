@@ -8,7 +8,7 @@ use tokio::{
     time::{Instant, timeout},
 };
 
-use super::{SpscSender, spsc_channel, test_log::log_init};
+use super::{SpscSender, TimeRange, spsc_channel, test_log::log_init};
 
 pub type SimpleForkedStream<Item> = ForkedStream<super::spsc::Receiver<Item>>;
 
@@ -27,6 +27,7 @@ where
 {
     pub input_sink: SpscSender<Item>,
     pub forked_stream: SimpleForkedStream<Item>,
+    pub time_range: TimeRange,
 }
 
 impl<Item> ConcurrentSetup<Item>
@@ -40,14 +41,7 @@ where
         ConcurrentSetup {
             input_sink: input,
             forked_stream: output_stream,
+            time_range: TimeRange::until(Duration::from_millis(10)),
         }
     }
-}
-
-/// Function that generates random `Instants` in between start Instant and end Instant
-pub fn instants_between(start: Instant, end: Instant, n: u32) -> Vec<Instant> {
-    let duration = end.duration_since(start);
-    (0..n)
-        .map(|i| start + duration.mul_f64(f64::from(i) / f64::from(n)))
-        .collect()
 }

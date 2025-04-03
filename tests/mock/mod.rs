@@ -3,6 +3,7 @@
 
 mod spsc;
 mod test_setups;
+mod time_range;
 
 mod test_log;
 use core::panic;
@@ -17,7 +18,8 @@ use futures::{FutureExt, Stream, StreamExt, task::noop_waker};
 use log::{info, trace};
 pub use spsc::{Sender as SpscSender, channel as spsc_channel};
 pub use test_log::log_init;
-pub use test_setups::{ConcurrentSetup, instants_between, new_sender_and_shared_stream};
+pub use test_setups::{ConcurrentSetup, new_sender_and_shared_stream};
+pub use time_range::TimeRange;
 use tokio::{
     select,
     task::JoinHandle,
@@ -72,14 +74,13 @@ pub trait TestableStream:
     fn assert_background(
         &self,
         expected: Poll<Option<Self::Item>>,
-        start: Instant,
-        deadline: Instant,
+        range: TimeRange,
     ) -> JoinHandle<()> {
         let mut background_stream = self.clone();
 
         tokio::spawn(async move {
-            sleep_until(start).await;
-            background_stream.assert(expected, deadline).await;
+            sleep_until(range.start).await;
+            background_stream.assert(expected, range.end).await;
         })
     }
 }
