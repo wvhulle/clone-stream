@@ -5,6 +5,7 @@ use std::{
 };
 
 use futures::{Stream, task::Context};
+use log::trace;
 
 use super::ChannelState;
 
@@ -21,6 +22,7 @@ impl<Item> Stream for Receiver<Item> {
             if let Some(sender_waker) = channel_state.sender_waiting.take() {
                 sender_waker.wake();
             }
+
             Poll::Ready(Some(cached_item))
         } else {
             channel_state.receiver_waiting = Some(cx.waker().clone());

@@ -10,8 +10,8 @@ use futures::task::Waker;
 pub use receiver::Receiver;
 pub use sender::Sender;
 
-pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
-    let channel_state = Arc::new(Mutex::new(Default::default()));
+pub fn channel<Item>() -> (Sender<Item>, Receiver<Item>) {
+    let channel_state = Arc::new(Mutex::new(ChannelState::default()));
 
     (
         Sender {
@@ -21,8 +21,8 @@ pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     )
 }
 
-struct ChannelState<T> {
-    items_to_send: VecDeque<T>,
+struct ChannelState<Item> {
+    items_to_send: VecDeque<Item>,
     sender_waiting: Option<Waker>,
     receiver_waiting: Option<Waker>,
 }

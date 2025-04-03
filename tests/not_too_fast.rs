@@ -35,5 +35,5 @@ fn await_too_late_double() {
     assert!(
         second_output_stream.next().now_or_never().is_none(),
         "Listening on the second output stream should have started too late."
-    )
+    );
 }

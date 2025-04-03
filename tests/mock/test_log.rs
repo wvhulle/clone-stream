@@ -15,7 +15,7 @@ pub fn log_init() {
                 record.args()
             )
         })
-        .filter_level(LevelFilter::Debug)
-        .filter(Some("clone_stream"), LevelFilter::Trace)
+        .filter_level(LevelFilter::Trace)
+        .filter(Some("forked_stream"), LevelFilter::Trace)
         .try_init();
 }
