@@ -2,13 +2,10 @@ use std::{
     collections::VecDeque,
     ops::{Deref, DerefMut},
     pin::Pin,
-    sync::{Arc, Mutex},
     task::{Context, Poll, Waker},
 };
 
 use futures::{Stream, StreamExt};
-
-use crate::ForkedStream;
 
 pub struct ForkBridge<BaseStream>
 where
@@ -17,60 +14,6 @@ where
     pub(super) stream: Pin<Box<BaseStream>>,
     pub(super) waiters: VecDeque<Waker>,
     pub(super) last_input: Poll<Option<BaseStream::Item>>,
-}
-
-impl<BaseStream> Deref for ForkBridge<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    type Target = Pin<Box<BaseStream>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.stream
-    }
-}
-impl<BaseStream> DerefMut for ForkBridge<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.stream
-    }
-}
-
-impl<BaseStream> From<ForkBridge<BaseStream>> for CloneableForkBridge<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn from(bridge: ForkBridge<BaseStream>) -> Self {
-        CloneableForkBridge(Arc::new(Mutex::new(bridge)))
-    }
-}
-
-pub struct CloneableForkBridge<BaseStream>(pub Arc<Mutex<ForkBridge<BaseStream>>>)
-where
-    BaseStream: Stream<Item: Clone>;
-
-impl<BaseStream> Clone for CloneableForkBridge<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn clone(&self) -> Self {
-        CloneableForkBridge(self.0.clone())
-    }
-}
-
-impl<BaseStream> CloneableForkBridge<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    pub fn new(stream: BaseStream) -> Self {
-        Self(Arc::new(Mutex::new(ForkBridge::from(stream))))
-    }
-
-    pub fn new_fork(&self) -> ForkedStream<BaseStream> {
-        ForkedStream(CloneableForkBridge(self.0.clone()))
-    }
 }
 
 impl<BaseStream> ForkBridge<BaseStream>
@@ -127,5 +70,24 @@ where
             waiters: VecDeque::new(),
             last_input: Poll::Pending,
         }
+    }
+}
+
+impl<BaseStream> Deref for ForkBridge<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    type Target = Pin<Box<BaseStream>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.stream
+    }
+}
+impl<BaseStream> DerefMut for ForkBridge<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.stream
     }
 }

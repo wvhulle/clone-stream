@@ -3,7 +3,6 @@ mod mock;
 use std::{task::Poll, time::Duration};
 
 use futures::{SinkExt, future::try_join_all};
-use log::info;
 use mock::{ConcurrentSetup, TestableStream, TimeRange};
 use tokio::time::sleep_until;
 

@@ -39,11 +39,11 @@ pub trait TestableStream:
 
     fn assert(
         &mut self,
-        expected: Poll<Option<Self::Item>>,
+        expected_poll_at_deadline: Poll<Option<Self::Item>>,
         deadline: Instant,
     ) -> impl Future<Output = ()> + Send {
         async move {
-            match expected {
+            match expected_poll_at_deadline {
                 Poll::Pending => {
                     select! {
                         () = sleep_until(deadline) => {
@@ -73,14 +73,16 @@ pub trait TestableStream:
 
     fn assert_background(
         &self,
-        expected: Poll<Option<Self::Item>>,
-        range: TimeRange,
+        expected_poll_at_end: Poll<Option<Self::Item>>,
+        start_await_cancel_await: TimeRange,
     ) -> JoinHandle<()> {
         let mut background_stream = self.clone();
 
         tokio::spawn(async move {
-            sleep_until(range.start).await;
-            background_stream.assert(expected, range.end).await;
+            sleep_until(start_await_cancel_await.start).await;
+            background_stream
+                .assert(expected_poll_at_end, start_await_cancel_await.end)
+                .await;
         })
     }
 }
