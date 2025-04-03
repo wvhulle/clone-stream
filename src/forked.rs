@@ -62,28 +62,6 @@ where
         trace!("Forked stream {} is being polled.", self.output_index);
         let mut bridge = self.clone_bridge.lock().unwrap();
 
-        let mut status = bridge.outputs.get_mut(&self.output_index).unwrap();
-
-        match &mut status {
-            ForkStage::WakingUp(waking) => {
-                let item = waking.processed.clone();
-                waking
-                    .remaining
-                    .retain(|already_waiting| !already_waiting.will_wake(new_context.waker()));
-
-                if waking.remaining.is_empty() {
-                    bridge.outputs.remove(&self.output_index);
-                }
-
-                Poll::Ready(item)
-            }
-            ForkStage::Waiting(_) => {
-                trace!(
-                    "The output stream {} is waiting for the input stream to resolve.",
-                    self.output_index
-                );
-                bridge.wake_others_or_queue(self.output_index, new_context.waker())
-            }
-        }
+        bridge.handle_fork(self.output_index, new_context)
     }
 }

@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     pin::Pin,
+    process::Output,
     task::{Context, Poll, Waker},
 };
 
@@ -28,6 +29,30 @@ where
             0
         } else {
             self.outputs.keys().max().unwrap() + 1
+        }
+    }
+
+    pub fn handle_fork(
+        &mut self,
+        output_index: OutputStreamId,
+        new_context: &mut Context,
+    ) -> Poll<Option<<BaseStream as Stream>::Item>> {
+        let mut status = self.outputs.entry(output_index).or_default();
+
+        match &mut status {
+            ForkStage::WakingUp(waking) => {
+                let item = waking.processed.clone();
+                waking
+                    .remaining
+                    .retain(|already_waiting| !already_waiting.will_wake(new_context.waker()));
+
+                if waking.remaining.is_empty() {
+                    self.outputs.remove(&output_index);
+                }
+
+                Poll::Ready(item)
+            }
+            ForkStage::Waiting(_) => self.wake_others_or_queue(output_index, new_context.waker()),
         }
     }
 
