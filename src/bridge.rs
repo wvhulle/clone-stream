@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     ops::{Deref, DerefMut},
     pin::Pin,
     task::{Context, Poll, Waker},
@@ -7,26 +6,25 @@ use std::{
 
 use futures::{Stream, StreamExt};
 
+use crate::buffer::SuspendedForks;
+
 pub struct ForkBridge<BaseStream>
 where
     BaseStream: Stream,
 {
     pub(super) base_stream: Pin<Box<BaseStream>>,
-    pub(super) suspended_forks: VecDeque<Waker>,
-    pub(super) last_input: Poll<Option<BaseStream::Item>>,
+    pub(super) suspended_forks: SuspendedForks<Option<BaseStream::Item>>,
 }
 
 impl<BaseStream> ForkBridge<BaseStream>
 where
-    BaseStream: Stream,
+    BaseStream: Stream<Item: Clone>,
 {
-    pub fn add_waker(&mut self, waker: Waker) {
-        self.remove_waker(&waker);
-        self.suspended_forks.push_back(waker);
-    }
-
-    pub fn remove_waker(&mut self, waker: &Waker) {
-        self.suspended_forks.retain(|w| !w.will_wake(waker));
+    pub fn new(base_stream: BaseStream, max_buffered: Option<usize>) -> Self {
+        Self {
+            base_stream: Box::pin(base_stream),
+            suspended_forks: SuspendedForks::new(max_buffered),
+        }
     }
 }
 
@@ -40,43 +38,20 @@ where
             .poll_next_unpin(&mut Context::from_waker(fork_waker))
         {
             Poll::Ready(item) => {
-                self.last_input = Poll::Ready(item.clone());
-
-                self.suspended_forks
-                    .clone()
-                    .into_iter()
-                    .for_each(|other_fork| {
-                        other_fork.wake_by_ref();
-                    });
-
+                self.suspended_forks.append(item.clone(), fork_waker);
+                self.suspended_forks.wake_all();
+                self.suspended_forks.remove_buffer_if_empty(fork_waker);
                 Poll::Ready(item)
             }
-            Poll::Pending => match self.last_input.clone() {
-                Poll::Pending => {
-                    self.add_waker(fork_waker.clone());
+            Poll::Pending => {
+                if let Some(item) = self.suspended_forks.earliest_item(fork_waker) {
+                    self.suspended_forks.remove_buffer_if_empty(fork_waker);
+                    Poll::Ready(item)
+                } else {
+                    self.suspended_forks.insert_buffer(fork_waker.clone());
                     Poll::Pending
                 }
-                Poll::Ready(item) => {
-                    self.remove_waker(fork_waker);
-                    if self.suspended_forks.is_empty() {
-                        self.last_input = Poll::Pending;
-                    }
-                    Poll::Ready(item.clone())
-                }
-            },
-        }
-    }
-}
-
-impl<BaseStream> From<BaseStream> for ForkBridge<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn from(stream: BaseStream) -> Self {
-        Self {
-            base_stream: Box::pin(stream),
-            suspended_forks: VecDeque::new(),
-            last_input: Poll::Pending,
+            }
         }
     }
 }

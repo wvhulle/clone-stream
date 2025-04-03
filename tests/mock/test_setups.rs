@@ -18,7 +18,7 @@ where
 {
     let (test_input_sender, test_input_receiver) = spsc_channel();
 
-    (test_input_sender, test_input_receiver.fork())
+    (test_input_sender, test_input_receiver.fork(None))
 }
 
 pub struct ConcurrentSetup<Item>

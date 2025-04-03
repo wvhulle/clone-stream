@@ -1,4 +1,5 @@
 mod bridge;
+mod buffer;
 mod forked;
 mod shared_bridge;
 use bridge::ForkBridge;
@@ -8,8 +9,10 @@ use shared_bridge::CloneableForkBridge;
 
 /// A trait that turns a `Stream` with cloneable `Item`s into a cloneable stream with the same item type.
 pub trait ForkStream: Stream<Item: Clone> + Sized {
-    fn fork(self) -> ForkedStream<Self> {
-        CloneableForkBridge::from(ForkBridge::from(self)).into()
+    /// Forks the stream into a new stream that can be cloned.
+    /// The `max_buffered` parameter controls how many items can be buffered for each fork.
+    fn fork(self, max_buffered: impl Into<Option<usize>>) -> ForkedStream<Self> {
+        CloneableForkBridge::from(ForkBridge::new(self, max_buffered.into())).into()
     }
 }
 
