@@ -44,9 +44,10 @@ where
     }
 }
 
-pub fn instants(n: usize) -> Vec<Instant> {
-    let now = Instant::now();
-    (1..=n)
-        .map(|i| now + Duration::from_millis(10 * i as u64))
+/// Function that generates random `Instants` in between start Instant and end Instant
+pub fn instants_between(start: Instant, end: Instant, n: u32) -> Vec<Instant> {
+    let duration = end.duration_since(start);
+    (0..n)
+        .map(|i| start + duration.mul_f64(f64::from(i) / f64::from(n)))
         .collect()
 }

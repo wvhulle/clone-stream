@@ -1,49 +1,53 @@
 use std::{
+    ops::{Deref, DerefMut},
     pin::Pin,
-    sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 
 use futures::Stream;
-use log::trace;
 
-use crate::{
-    bridge::{ForkBridge, ForkId},
-    fork_stage::ForkStage,
-};
+use crate::bridge::CloneableForkBridge;
 
-/// A wrapper around a stream that implements `Clone`.
-pub struct ForkedStream<BaseStream>
+impl<BaseStream> Deref for ForkedStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    pub output_index: ForkId,
-    fork_bridge: Arc<ForkBridge<BaseStream>>,
-}
+    type Target = CloneableForkBridge<BaseStream>;
 
-impl<BaseStream> From<ForkBridge<BaseStream>> for ForkedStream<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn from(bridge: ForkBridge<BaseStream>) -> Self {
-        let free_output_index = bridge.new_fork();
-        Self {
-            output_index: free_output_index,
-            fork_bridge: Arc::new(bridge),
-        }
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
+
+impl<BaseStream> DerefMut for ForkedStream<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+/// A wrapper around a stream that implements `Clone`.
+pub struct ForkedStream<BaseStream>(pub CloneableForkBridge<BaseStream>)
+where
+    BaseStream: Stream<Item: Clone>;
 
 impl<BaseStream> Clone for ForkedStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
     fn clone(&self) -> Self {
-        let free_index = self.fork_bridge.as_ref().new_fork();
-        Self {
-            output_index: free_index,
-            fork_bridge: self.fork_bridge.clone(),
-        }
+        ForkedStream(self.0.clone())
+    }
+}
+
+impl<BaseStream> From<CloneableForkBridge<BaseStream>> for ForkedStream<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    fn from(bridge: CloneableForkBridge<BaseStream>) -> Self {
+        bridge.new_fork()
     }
 }
 
@@ -54,9 +58,6 @@ where
     type Item = BaseStream::Item;
 
     fn poll_next(self: Pin<&mut Self>, new_context: &mut Context) -> Poll<Option<Self::Item>> {
-        trace!("Forked stream {} is being polled.", self.output_index);
-
-        self.fork_bridge
-            .handle_fork(self.output_index, new_context.waker())
+        self.0.0.lock().unwrap().handle_fork(new_context.waker())
     }
 }

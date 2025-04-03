@@ -17,7 +17,7 @@ use futures::{FutureExt, Stream, StreamExt, task::noop_waker};
 use log::{info, trace};
 pub use spsc::{Sender as SpscSender, channel as spsc_channel};
 pub use test_log::log_init;
-pub use test_setups::{ConcurrentSetup, instants, new_sender_and_shared_stream};
+pub use test_setups::{ConcurrentSetup, instants_between, new_sender_and_shared_stream};
 use tokio::{
     select,
     task::JoinHandle,
@@ -45,12 +45,9 @@ pub trait TestableStream:
                 Poll::Pending => {
                     select! {
                         () = sleep_until(deadline) => {
-                            trace!("Background task for fork timed out before a next element was served as expected.");
-
 
                         }
                         item = self.next() => {
-                            trace!("Got the next element on the background task.");
                             panic!("Fork should not have received an item, but it did: {:?}",  item);
                         }
 
@@ -63,7 +60,6 @@ pub trait TestableStream:
                             panic!("Fork should have received an item, but it didn't.");
                         }
                         actual = self.next() => {
-                            trace!("Got the next element on the background task.");
                             assert_eq!(actual, expected, "The item that was received by fork  did not match the expectation.");
                         }
 
@@ -76,11 +72,13 @@ pub trait TestableStream:
     fn assert_background(
         &self,
         expected: Poll<Option<Self::Item>>,
+        start: Instant,
         deadline: Instant,
     ) -> JoinHandle<()> {
         let mut background_stream = self.clone();
 
         tokio::spawn(async move {
+            sleep_until(start).await;
             background_stream.assert(expected, deadline).await;
         })
     }
