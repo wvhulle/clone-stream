@@ -3,7 +3,6 @@ mod fork_stage;
 mod forked;
 
 use bridge::ForkBridge;
-pub use bridge::OutputStreamId;
 pub use forked::ForkedStream;
 use futures::Stream;
 /// A trait that turns a `Stream` with cloneable `Item`s into a cloneable stream with the same item type.

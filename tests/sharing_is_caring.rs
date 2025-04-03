@@ -15,7 +15,7 @@ async fn next_becoms_pending_when_it_happens_before_send() {
 
     let primary_task = setup
         .forked_stream
-        .expect_background_at(Poll::Pending, test_moments[1]);
+        .assert_background(Poll::Pending, test_moments[1]);
 
     info!("Waiting a bit so that the background task can finish... ");
 
@@ -34,7 +34,7 @@ async fn next_becomes_ready_when_killed_after_send() {
     // First background task is started
     let primary_task = setup
         .forked_stream
-        .expect_background_at(Poll::Ready(Some(0)), test_moments[1]);
+        .assert_background(Poll::Ready(Some(0)), test_moments[1]);
 
     sleep_until(test_moments[0]).await;
 
@@ -53,7 +53,7 @@ async fn hundreds_next_polls_at_the_same_time() {
     let wait_for_all = try_join_all((1..100).map(|_| {
         setup
             .forked_stream
-            .expect_background_at(Poll::Ready(Some(0)), test_moments[1])
+            .assert_background(Poll::Ready(Some(0)), test_moments[1])
     }));
     sleep_until(test_moments[0]).await;
 
@@ -72,16 +72,16 @@ async fn poll_three_forks_consecutively() {
     // First background task is started
     let primary_task = setup
         .forked_stream
-        .expect_background_at(Poll::Ready(Some(0)), test_moments[1]);
+        .assert_background(Poll::Ready(Some(0)), test_moments[1]);
 
     // First background task is started
     let secundary_task = setup
         .forked_stream
-        .expect_background_at(Poll::Ready(Some(0)), test_moments[2]);
+        .assert_background(Poll::Ready(Some(0)), test_moments[2]);
 
     let tertiary_task = setup
         .forked_stream
-        .expect_background_at(Poll::Ready(Some(0)), test_moments[3]);
+        .assert_background(Poll::Ready(Some(0)), test_moments[3]);
 
     sleep_until(test_moments[0]).await;
 

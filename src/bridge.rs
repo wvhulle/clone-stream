@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     pin::Pin,
-    process::Output,
     task::{Context, Poll, Waker},
 };
 
@@ -10,21 +9,21 @@ use log::trace;
 
 use crate::fork_stage::{ForkStage, Waiting, Waking};
 
-pub type OutputStreamId = usize;
+pub(crate) type ForkId = usize;
 
 pub(crate) struct ForkBridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
     pub(super) stream: Pin<Box<BaseStream>>,
-    pub(super) outputs: BTreeMap<OutputStreamId, ForkStage<BaseStream::Item>>,
+    pub(super) outputs: BTreeMap<ForkId, ForkStage<BaseStream::Item>>,
 }
 
 impl<BaseStream> ForkBridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    pub fn free_output_index(&self) -> OutputStreamId {
+    pub fn free_output_index(&self) -> ForkId {
         if self.outputs.is_empty() {
             0
         } else {
@@ -34,9 +33,9 @@ where
 
     pub fn handle_fork(
         &mut self,
-        output_index: OutputStreamId,
+        output_index: ForkId,
         new_context: &mut Context,
-    ) -> Poll<Option<<BaseStream as Stream>::Item>> {
+    ) -> Poll<Option<BaseStream::Item>> {
         let mut status = self.outputs.entry(output_index).or_default();
 
         match &mut status {
@@ -52,13 +51,51 @@ where
 
                 Poll::Ready(item)
             }
-            ForkStage::Waiting(_) => self.wake_others_or_queue(output_index, new_context.waker()),
+            ForkStage::Waiting(_) => self.check_base_stream(output_index, new_context.waker()),
+        }
+    }
+
+    pub(super) fn check_base_stream(
+        &mut self,
+        polled_output: ForkId,
+        current_task: &Waker,
+    ) -> Poll<Option<BaseStream::Item>> {
+        match self
+            .stream
+            .poll_next_unpin(&mut Context::from_waker(current_task))
+        {
+            Poll::Ready(maybe_item) => {
+                trace!(
+                    "The input stream has resolved an item. Emitting it to all output streams. Not storing any waker for the current fork {polled_output}."
+                );
+
+                self.notify_all_other_waiters_of_all_forks(
+                    polled_output,
+                    maybe_item.as_ref(),
+                    current_task,
+                );
+
+                Poll::Ready(maybe_item)
+            }
+            Poll::Pending => {
+                trace!(
+                    "The input stream is not ready yet. Marking fork {polled_output} as waiting."
+                );
+                self.outputs.insert(
+                    polled_output,
+                    ForkStage::Waiting(Waiting {
+                        suspended_tasks: VecDeque::from([current_task.clone()]),
+                    }),
+                );
+
+                Poll::Pending
+            }
         }
     }
 
     pub fn notify_all_other_waiters_of_all_forks(
         &mut self,
-        id: OutputStreamId,
+        id: ForkId,
         maybe_item: Option<&BaseStream::Item>,
         current_waker: &Waker,
     ) {
@@ -109,44 +146,6 @@ where
                     });
                 }
             });
-        }
-    }
-
-    pub(super) fn wake_others_or_queue(
-        &mut self,
-        polled_output: OutputStreamId,
-        current_task: &Waker,
-    ) -> Poll<Option<BaseStream::Item>> {
-        match self
-            .stream
-            .poll_next_unpin(&mut Context::from_waker(current_task))
-        {
-            Poll::Ready(maybe_item) => {
-                trace!(
-                    "The input stream has resolved an item. Emitting it to all output streams. Not storing any waker for the current fork {polled_output}."
-                );
-
-                self.notify_all_other_waiters_of_all_forks(
-                    polled_output,
-                    maybe_item.as_ref(),
-                    current_task,
-                );
-
-                Poll::Ready(maybe_item)
-            }
-            Poll::Pending => {
-                trace!(
-                    "The input stream is not ready yet. Marking fork {polled_output} as waiting."
-                );
-                self.outputs.insert(
-                    polled_output,
-                    ForkStage::Waiting(Waiting {
-                        suspended_tasks: VecDeque::from([current_task.clone()]),
-                    }),
-                );
-
-                Poll::Pending
-            }
         }
     }
 }

@@ -8,7 +8,7 @@ use futures::Stream;
 use log::trace;
 
 use crate::{
-    bridge::{ForkBridge, OutputStreamId},
+    bridge::{ForkBridge, ForkId},
     fork_stage::ForkStage,
 };
 
@@ -17,7 +17,7 @@ pub struct ForkedStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    pub output_index: OutputStreamId,
+    pub output_index: ForkId,
     clone_bridge: Arc<Mutex<ForkBridge<BaseStream>>>,
 }
 

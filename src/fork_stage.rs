@@ -1,8 +1,6 @@
 /// Each fork has its own set of wakers.
 use std::{collections::VecDeque, task::Waker};
 
-use crate::OutputStreamId;
-
 #[derive(Default)]
 pub struct Waking<Item> {
     /// The most recent item:
