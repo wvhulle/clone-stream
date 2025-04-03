@@ -5,12 +5,12 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::Stream;
+use futures::{Stream, stream::FusedStream};
 
 use crate::{bridge::ForkBridge, shared_bridge::CloneableForkBridge};
 
 /// A wrapper around a stream that implements `Clone`.
-pub struct ForkedStream<BaseStream>(pub CloneableForkBridge<BaseStream>)
+pub struct ForkedStream<BaseStream>(CloneableForkBridge<BaseStream>)
 where
     BaseStream: Stream<Item: Clone>;
 
@@ -19,7 +19,7 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn from(bridge: CloneableForkBridge<BaseStream>) -> Self {
-        bridge.new_fork()
+        ForkedStream(bridge)
     }
 }
 
@@ -30,7 +30,20 @@ where
     type Item = BaseStream::Item;
 
     fn poll_next(self: Pin<&mut Self>, new_context: &mut Context) -> Poll<Option<Self::Item>> {
-        self.lock().unwrap().handle_fork(new_context.waker())
+        self.lock().unwrap().poll_base_stream(new_context.waker())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.lock().unwrap().size_hint()
+    }
+}
+
+impl<BaseStream> FusedStream for ForkedStream<BaseStream>
+where
+    BaseStream: Stream<Item: Clone> + FusedStream,
+{
+    fn is_terminated(&self) -> bool {
+        self.lock().unwrap().is_terminated()
     }
 }
 

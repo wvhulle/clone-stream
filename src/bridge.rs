@@ -9,48 +9,56 @@ use futures::{Stream, StreamExt};
 
 pub struct ForkBridge<BaseStream>
 where
-    BaseStream: Stream<Item: Clone>,
+    BaseStream: Stream,
 {
-    pub(super) stream: Pin<Box<BaseStream>>,
-    pub(super) waiters: VecDeque<Waker>,
+    pub(super) base_stream: Pin<Box<BaseStream>>,
+    pub(super) suspended_forks: VecDeque<Waker>,
     pub(super) last_input: Poll<Option<BaseStream::Item>>,
+}
+
+impl<BaseStream> ForkBridge<BaseStream>
+where
+    BaseStream: Stream,
+{
+    pub fn add_waker(&mut self, waker: Waker) {
+        self.remove_waker(&waker);
+        self.suspended_forks.push_back(waker);
+    }
+
+    pub fn remove_waker(&mut self, waker: &Waker) {
+        self.suspended_forks.retain(|w| !w.will_wake(waker));
+    }
 }
 
 impl<BaseStream> ForkBridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    pub fn add_waker(&mut self, waker: Waker) {
-        self.remove_waker(&waker);
-        self.waiters.push_back(waker);
-    }
+    pub fn poll_base_stream(&mut self, fork_waker: &Waker) -> Poll<Option<BaseStream::Item>> {
+        match self
+            .base_stream
+            .poll_next_unpin(&mut Context::from_waker(fork_waker))
+        {
+            Poll::Ready(item) => {
+                self.last_input = Poll::Ready(item.clone());
 
-    pub fn remove_waker(&mut self, waker: &Waker) {
-        self.waiters.retain(|w| !w.will_wake(waker));
-    }
+                self.suspended_forks
+                    .clone()
+                    .into_iter()
+                    .for_each(|other_fork| {
+                        other_fork.wake_by_ref();
+                    });
 
-    pub(super) fn handle_fork(&mut self, current_task: &Waker) -> Poll<Option<BaseStream::Item>> {
-        let poll = self
-            .stream
-            .poll_next_unpin(&mut Context::from_waker(current_task));
-        match poll {
-            Poll::Ready(maybe_item) => {
-                self.last_input = Poll::Ready(maybe_item.clone());
-
-                self.waiters.clone().into_iter().for_each(|waker| {
-                    waker.wake_by_ref();
-                });
-
-                Poll::Ready(maybe_item)
+                Poll::Ready(item)
             }
             Poll::Pending => match self.last_input.clone() {
                 Poll::Pending => {
-                    self.add_waker(current_task.clone());
+                    self.add_waker(fork_waker.clone());
                     Poll::Pending
                 }
                 Poll::Ready(item) => {
-                    self.remove_waker(current_task);
-                    if self.waiters.is_empty() {
+                    self.remove_waker(fork_waker);
+                    if self.suspended_forks.is_empty() {
                         self.last_input = Poll::Pending;
                     }
                     Poll::Ready(item.clone())
@@ -66,8 +74,8 @@ where
 {
     fn from(stream: BaseStream) -> Self {
         Self {
-            stream: Box::pin(stream),
-            waiters: VecDeque::new(),
+            base_stream: Box::pin(stream),
+            suspended_forks: VecDeque::new(),
             last_input: Poll::Pending,
         }
     }
@@ -80,7 +88,7 @@ where
     type Target = Pin<Box<BaseStream>>;
 
     fn deref(&self) -> &Self::Target {
-        &self.stream
+        &self.base_stream
     }
 }
 impl<BaseStream> DerefMut for ForkBridge<BaseStream>
@@ -88,6 +96,6 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.stream
+        &mut self.base_stream
     }
 }
