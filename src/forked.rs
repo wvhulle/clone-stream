@@ -1,13 +1,12 @@
 use std::{
     ops::{Deref, DerefMut},
     pin::Pin,
-    sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 
 use futures::{Stream, stream::FusedStream};
 
-use crate::{bridge::ForkBridge, shared_bridge::SharedBridge};
+use crate::shared_bridge::SharedBridge;
 
 /// A wrapper around a stream that implements `Clone`.
 pub struct ForkedStream<BaseStream>(SharedBridge<BaseStream>)
@@ -30,11 +29,11 @@ where
     type Item = BaseStream::Item;
 
     fn poll_next(self: Pin<&mut Self>, new_context: &mut Context) -> Poll<Option<Self::Item>> {
-        self.lock().unwrap().poll_base_stream(new_context.waker())
+        self.modify(|bridge| bridge.poll_base_stream(new_context.waker()))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.lock().unwrap().size_hint()
+        self.get(|bridge| bridge.base_stream.size_hint())
     }
 }
 
@@ -43,7 +42,7 @@ where
     BaseStream: Stream<Item: Clone> + FusedStream,
 {
     fn is_terminated(&self) -> bool {
-        self.lock().unwrap().is_terminated()
+        self.get(|bridge| bridge.base_stream.is_terminated())
     }
 }
 
@@ -60,10 +59,10 @@ impl<BaseStream> Deref for ForkedStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    type Target = Arc<Mutex<ForkBridge<BaseStream>>>;
+    type Target = SharedBridge<BaseStream>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0.0
+        &self.0
     }
 }
 
@@ -72,6 +71,6 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.0
+        &mut self.0
     }
 }

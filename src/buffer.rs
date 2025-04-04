@@ -28,6 +28,10 @@ where
     Item: Clone,
 {
     pub fn new(max_buffered: Option<usize>) -> Self {
+        assert!(
+            max_buffered.is_none_or(|s| s != 0),
+            "Buffer size should be larger than one."
+        );
         Self {
             task_buffers: VecDeque::new(),
             max_buffered,
@@ -39,7 +43,7 @@ where
             .filter(|fork| !fork.task_waker.will_wake(waker))
             .for_each(|fork| match self.max_buffered {
                 Some(max) => {
-                    if fork.item_queue.len() == max {
+                    while fork.item_queue.len() >= max {
                         fork.item_queue.pop_front();
                     }
 

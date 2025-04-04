@@ -11,7 +11,7 @@ license = "MIT"
 [lints.clippy]
 pedantic = "deny"
 
-# Enable all lints
+
 [dependencies]
 futures = "0.3.31"
 log = "0.4.27"
