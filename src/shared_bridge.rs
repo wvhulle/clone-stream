@@ -6,7 +6,7 @@ use std::{
 use futures::Stream;
 use log::warn;
 
-use crate::bridge::ForkBridge;
+use crate::fork_bridge::ForkBridge;
 
 pub struct SharedBridge<BaseStream>(Arc<RwLock<ForkBridge<BaseStream>>>)
 where
@@ -19,9 +19,9 @@ where
     pub fn modify<R>(&self, modify: impl FnOnce(&mut ForkBridge<BaseStream>) -> R) -> R {
         match self.write() {
             Ok(mut bridge) => modify(&mut bridge),
-            Err(mut e) => {
+            Err(mut poisened) => {
                 warn!("The previous task who locked the bridge to modify it panicked");
-                let corrupted_bridge = e.get_mut();
+                let corrupted_bridge = poisened.get_mut();
                 corrupted_bridge.clear();
                 modify(corrupted_bridge)
             }

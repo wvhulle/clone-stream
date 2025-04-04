@@ -14,7 +14,7 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     bridge: SharedBridge<BaseStream>,
-    waker: Option<Waker>,
+    last_task_polling: Option<Waker>,
 }
 
 impl<BaseStream> From<SharedBridge<BaseStream>> for ForkedStream<BaseStream>
@@ -24,7 +24,7 @@ where
     fn from(bridge: SharedBridge<BaseStream>) -> Self {
         ForkedStream {
             bridge,
-            waker: None,
+            last_task_polling: None,
         }
     }
 }
@@ -35,23 +35,18 @@ where
 {
     type Item = BaseStream::Item;
 
-    fn poll_next(mut self: Pin<&mut Self>, fork_task_cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let poll_result = self.modify(|bridge| bridge.poll(fork_task_cx.waker()));
-
-        if poll_result.is_pending() {
-            self.waker = Some(fork_task_cx.waker().clone());
-        } else {
-            self.waker = None;
-        }
-
+    fn poll_next(mut self: Pin<&mut Self>, current_task: &mut Context) -> Poll<Option<Self::Item>> {
+        let waker = current_task.waker();
+        let poll_result = self.modify(|bridge| bridge.poll(waker));
+        self.last_task_polling = Some(waker.clone());
         poll_result
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        match &self.waker {
+        match &self.last_task_polling {
             Some(waker) => self.get(|bridge| {
                 let (lower, upper) = bridge.base_stream.size_hint();
-                let n_cached = bridge.suspended_forks.n_cached(waker);
+                let n_cached = bridge.suspended_forks.items_remaining(waker);
                 (lower + n_cached, upper.map(|u| u + n_cached))
             }),
             None => self.get(|bridge| bridge.base_stream.size_hint()),
@@ -64,9 +59,10 @@ where
     BaseStream: Stream<Item: Clone> + FusedStream,
 {
     fn is_terminated(&self) -> bool {
-        match &self.waker {
+        match &self.last_task_polling {
             Some(waker) => self.get(|bridge| {
-                bridge.base_stream.is_terminated() && bridge.suspended_forks.n_cached(waker) == 0
+                bridge.base_stream.is_terminated()
+                    && bridge.suspended_forks.items_remaining(waker) == 0
             }),
             None => self.get(|bridge| bridge.base_stream.is_terminated()),
         }

@@ -1,9 +1,9 @@
-mod bridge;
-mod buffer;
-mod forked;
+mod fork_bridge;
+mod forked_stream;
 mod shared_bridge;
-use bridge::ForkBridge;
-pub use forked::ForkedStream;
+mod task_item_queue;
+use fork_bridge::ForkBridge;
+pub use forked_stream::ForkedStream;
 use futures::Stream;
 use shared_bridge::SharedBridge;
 

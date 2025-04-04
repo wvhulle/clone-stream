@@ -6,7 +6,7 @@ use std::{
 
 use futures::{Stream, StreamExt};
 
-use crate::buffer::SuspendedForks;
+use crate::task_item_queue::SuspendedForks;
 
 pub struct ForkBridge<BaseStream>
 where
@@ -33,7 +33,7 @@ where
 
     pub fn poll(&mut self, fork_waker: &Waker) -> Poll<Option<BaseStream::Item>> {
         if let Some(item) = self.suspended_forks.earliest_item(fork_waker) {
-            self.suspended_forks.remove_buffer_if_empty(fork_waker);
+            self.suspended_forks.forget_if_queue_empty(fork_waker);
             Poll::Ready(item)
         } else {
             match self
@@ -41,7 +41,7 @@ where
                 .poll_next_unpin(&mut Context::from_waker(fork_waker))
             {
                 Poll::Pending => {
-                    self.suspended_forks.insert_buffer(fork_waker.clone());
+                    self.suspended_forks.insert_empty_queue(fork_waker.clone());
                     Poll::Pending
                 }
                 Poll::Ready(item) => {
