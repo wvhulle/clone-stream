@@ -12,44 +12,42 @@ pub struct ForkBridge<BaseStream>
 where
     BaseStream: Stream,
 {
-    pub(super) base_stream: Pin<Box<BaseStream>>,
-    pub(super) suspended_forks: SuspendedForks<Option<BaseStream::Item>>,
+    pub base_stream: Pin<Box<BaseStream>>,
+    pub suspended_forks: SuspendedForks<Option<BaseStream::Item>>,
 }
 
 impl<BaseStream> ForkBridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    pub fn new(base_stream: BaseStream, max_buffered: Option<usize>) -> Self {
+    pub fn new(base_stream: BaseStream, max_items_cached: Option<usize>) -> Self {
         Self {
             base_stream: Box::pin(base_stream),
-            suspended_forks: SuspendedForks::new(max_buffered),
+            suspended_forks: SuspendedForks::new(max_items_cached),
         }
     }
-}
 
-impl<BaseStream> ForkBridge<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    pub fn poll_base_stream(&mut self, fork_waker: &Waker) -> Poll<Option<BaseStream::Item>> {
-        match self
-            .base_stream
-            .poll_next_unpin(&mut Context::from_waker(fork_waker))
-        {
-            Poll::Ready(item) => {
-                self.suspended_forks.append(item.clone(), fork_waker);
-                self.suspended_forks.remove_buffer_if_empty(fork_waker);
-                self.suspended_forks.wake_all();
-                Poll::Ready(item)
-            }
-            Poll::Pending => {
-                if let Some(item) = self.suspended_forks.earliest_item(fork_waker) {
-                    self.suspended_forks.remove_buffer_if_empty(fork_waker);
-                    Poll::Ready(item)
-                } else {
+    pub fn clear(&mut self) {
+        self.suspended_forks.clear();
+    }
+
+    pub fn poll(&mut self, fork_waker: &Waker) -> Poll<Option<BaseStream::Item>> {
+        if let Some(item) = self.suspended_forks.earliest_item(fork_waker) {
+            self.suspended_forks.remove_buffer_if_empty(fork_waker);
+            Poll::Ready(item)
+        } else {
+            match self
+                .base_stream
+                .poll_next_unpin(&mut Context::from_waker(fork_waker))
+            {
+                Poll::Pending => {
                     self.suspended_forks.insert_buffer(fork_waker.clone());
                     Poll::Pending
+                }
+                Poll::Ready(item) => {
+                    self.suspended_forks.append(item.clone(), fork_waker);
+                    self.suspended_forks.wake_all();
+                    Poll::Ready(item)
                 }
             }
         }

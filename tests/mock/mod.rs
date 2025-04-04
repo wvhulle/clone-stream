@@ -18,7 +18,7 @@ use futures::{FutureExt, Stream, StreamExt, task::noop_waker};
 use log::{info, trace};
 pub use spsc::{Sender as SpscSender, channel as spsc_channel};
 pub use test_log::log_init;
-pub use test_setups::{ConcurrentSetup, new_sender_and_shared_stream};
+pub use test_setups::{ConcurrentSetup, send_fork};
 pub use time_range::TimeRange;
 use tokio::{
     select,
@@ -46,9 +46,7 @@ pub trait TestableStream:
             match expected_poll_at_deadline {
                 Poll::Pending => {
                     select! {
-                        () = sleep_until(deadline) => {
-
-                        }
+                        () = sleep_until(deadline) => {}
                         item = self.next() => {
                             panic!("Fork should not have received an item, but it did: {:?}",  item);
                         }
@@ -58,7 +56,6 @@ pub trait TestableStream:
                 Poll::Ready(expected) => {
                     select! {
                         () = sleep_until(deadline) => {
-
                             panic!("Fork should have received an item, but it didn't.");
                         }
                         actual = self.next() => {

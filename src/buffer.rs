@@ -1,5 +1,7 @@
 use std::{collections::VecDeque, task::Waker};
 
+use log::trace;
+
 pub struct TaskBuffer<Item> {
     pub task_waker: Waker,
     pub item_queue: VecDeque<Item>,
@@ -14,6 +16,9 @@ impl<Item> TaskBuffer<Item> {
     }
 }
 
+/// An object representing the tasks of the forks that polled but were suspended.
+/// The tasks are represented by their initial waker.
+/// The items are buffered in a queue for each task.
 #[derive(Default)]
 pub struct SuspendedForks<Item> {
     /// Buffers for each task that is waiting for an item.
@@ -37,22 +42,35 @@ where
             max_buffered,
         }
     }
+
+    pub fn clear(&mut self) {
+        self.task_buffers.clear();
+    }
     pub fn append(&mut self, item: Item, waker: &Waker) {
         self.task_buffers
             .iter_mut()
             .filter(|fork| !fork.task_waker.will_wake(waker))
-            .for_each(|fork| match self.max_buffered {
-                Some(max) => {
+            .for_each(|fork| {
+                if let Some(max) = self.max_buffered {
                     while fork.item_queue.len() >= max {
+                        trace!("Buffer is full, removing the oldest item");
                         fork.item_queue.pop_front();
                     }
 
+                    trace!("Adding item to the buffer");
                     fork.item_queue.push_back(item.clone());
-                }
-                None => {
+                } else {
+                    trace!("Adding item to the buffer");
                     fork.item_queue.push_back(item.clone());
                 }
             });
+    }
+
+    pub fn n_cached(&self, waker: &Waker) -> usize {
+        self.task_buffers
+            .iter()
+            .find(|fork| fork.task_waker.will_wake(waker))
+            .map_or(0, |fork| fork.item_queue.len())
     }
 
     pub fn earliest_item(&mut self, waker: &Waker) -> Option<Item> {
@@ -86,6 +104,7 @@ where
             .position(|fork| fork.task_waker.will_wake(waker))
         {
             if self.task_buffers[index].item_queue.is_empty() {
+                trace!("Removing empty buffer");
                 self.task_buffers.remove(index);
             }
         }

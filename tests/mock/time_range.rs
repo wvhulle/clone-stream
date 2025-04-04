@@ -9,35 +9,28 @@ pub struct TimeRange {
 }
 
 impl TimeRange {
-    pub fn until(duration: Duration) -> Self {
-        let start = Instant::now();
-        let end = start + duration;
-        Self { start, end }
+    pub fn split(&self, n: u32, gap_ratio: f64) -> Vec<TimeRange> {
+        let total = self.duration();
+
+        if n == 0 {
+            panic!("Cannot split into 0 ranges");
+        } else if n == 1 {
+            return vec![*self];
+        } else {
+            let n_ranges = f64::from(n);
+            let n_gaps = f64::from(n - 1);
+            let duration_per_range = total.mul_f64((1.0 - gap_ratio) / n_ranges);
+            let gap_width = (total - duration_per_range.mul_f64(n_ranges)).mul_f64(1.0 / n_gaps);
+            (0..n)
+                .map(|i| TimeRange {
+                    start: self.start + (duration_per_range + gap_width) * i,
+                    end: self.start + duration_per_range * (i + 1) + gap_width * i,
+                })
+                .collect()
+        }
     }
 
-    pub fn split_into_consecutive_ranges(&self, n: u32) -> Vec<TimeRange> {
-        let total_duration = self.end.duration_since(self.start);
-        let duration_per_range = total_duration / n;
-        (0..n)
-            .map(|i| TimeRange {
-                start: self.start + duration_per_range * i,
-                end: self.start + duration_per_range * (i + 1),
-            })
-            .collect()
-    }
-
-    pub fn split_into_consecutive_range_with_gaps(&self, n: u32, gap: Duration) -> Vec<TimeRange> {
-        let total_duration = self.end.duration_since(self.start);
-        let duration_per_range = (total_duration - gap * (n - 1)) / n;
-        (0..n)
-            .map(|i| TimeRange {
-                start: self.start + duration_per_range * i + gap * i,
-                end: self.start + duration_per_range * (i + 1) + gap * i,
-            })
-            .collect()
-    }
-
-    pub fn split_into_consecutive_instants(&self, n: u32) -> Vec<Instant> {
+    pub fn moments(&self, n: u32) -> Vec<Instant> {
         let total_duration = self.end.duration_since(self.start);
         let duration_per_range = total_duration / n;
         (0..n)
@@ -52,5 +45,14 @@ impl TimeRange {
 
     pub fn duration(&self) -> Duration {
         self.end.duration_since(self.start)
+    }
+}
+
+impl From<Duration> for TimeRange {
+    fn from(duration: Duration) -> Self {
+        TimeRange {
+            start: Instant::now(),
+            end: Instant::now() + duration,
+        }
     }
 }

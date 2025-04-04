@@ -11,8 +11,8 @@ use shared_bridge::SharedBridge;
 pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// Forks the stream into a new stream that can be cloned.
     /// The `max_buffered` parameter controls how many items can be buffered for each fork.
-    fn fork(self, max_buffered: impl Into<Option<usize>>) -> ForkedStream<Self> {
-        SharedBridge::from(ForkBridge::new(self, max_buffered.into())).into()
+    fn fork(self, max_items_cached: impl Into<Option<usize>>) -> ForkedStream<Self> {
+        SharedBridge::from(ForkBridge::new(self, max_items_cached.into())).into()
     }
 }
 

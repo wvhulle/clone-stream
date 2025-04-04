@@ -1,6 +1,6 @@
 # Forkable streams
 
-This library allows you to convert non-cloneable streams into cloneable streams. The only requirement is that the item type of the base-stream is cloneable.
+This Rust library allows you to convert non-cloneable streams into cloneable streams. The only requirement is that the item type of the base-stream is cloneable. The streams are supposed to be Rust types implementing the `Stream` trait from the common `futures` crate.
 
 ## Usage 
 
@@ -28,15 +28,22 @@ let cloneable_stream = uncloneable_stream.fork(None);
 let mut cloned_stream = cloneable_stream.clone();
 ```
 
-The required argument for `fork` is the size of the buffers allocated for each separate suspended awaiting task. 
+The required argument for `fork` is the maximum amount of items cached for other pending tasks.
 
-Remark: The extra argument is necessary because it is possible that other task are scheduled to run earlier. They may poll new items from the base stream more quickly and the current suspended task might not be able to catch up.
+
+## How does it work?
+
+The stream you start with is called `BaseStream`. You create a kind of adapter / bridge called `ForkBridge`. Then you create forks from this bridge that reference the bridge themselves.
+
+Each time a fork is polled, the waker is used to check whether this task already polled the bridge in the past. If the fork already polled, it will be in a list on the bridge and may contain buffered items not seen yet.
 
 ## Contributing
 
-This was an exercise in making streams forkable without spawning tasks. This is my first time storing and managing `Waker` objects. Sorry for any mistakes.
+This small project was an exercise for me making streams forkable without spawning tasks. This is my first time storing and managing `Waker` objects. Sorry for any mistakes.
 
-Run Rust unit and integration tests with:
+There are a few alternative solutions on `crates.io`.
+
+You can run the tests with:
 
 ```bash
 cargo test
