@@ -7,18 +7,18 @@ use std::{
 
 use futures::{Stream, stream::FusedStream};
 
-use crate::{bridge::ForkBridge, shared_bridge::CloneableForkBridge};
+use crate::{bridge::ForkBridge, shared_bridge::SharedBridge};
 
 /// A wrapper around a stream that implements `Clone`.
-pub struct ForkedStream<BaseStream>(CloneableForkBridge<BaseStream>)
+pub struct ForkedStream<BaseStream>(SharedBridge<BaseStream>)
 where
     BaseStream: Stream<Item: Clone>;
 
-impl<BaseStream> From<CloneableForkBridge<BaseStream>> for ForkedStream<BaseStream>
+impl<BaseStream> From<SharedBridge<BaseStream>> for ForkedStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fn from(bridge: CloneableForkBridge<BaseStream>) -> Self {
+    fn from(bridge: SharedBridge<BaseStream>) -> Self {
         ForkedStream(bridge)
     }
 }

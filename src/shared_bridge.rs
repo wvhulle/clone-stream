@@ -4,24 +4,24 @@ use futures::Stream;
 
 use crate::bridge::ForkBridge;
 
-impl<BaseStream> From<ForkBridge<BaseStream>> for CloneableForkBridge<BaseStream>
+impl<BaseStream> From<ForkBridge<BaseStream>> for SharedBridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
     fn from(bridge: ForkBridge<BaseStream>) -> Self {
-        CloneableForkBridge(Arc::new(Mutex::new(bridge)))
+        SharedBridge(Arc::new(Mutex::new(bridge)))
     }
 }
 
-pub struct CloneableForkBridge<BaseStream>(pub Arc<Mutex<ForkBridge<BaseStream>>>)
+pub struct SharedBridge<BaseStream>(pub Arc<Mutex<ForkBridge<BaseStream>>>)
 where
     BaseStream: Stream<Item: Clone>;
 
-impl<BaseStream> Clone for CloneableForkBridge<BaseStream>
+impl<BaseStream> Clone for SharedBridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
     fn clone(&self) -> Self {
-        CloneableForkBridge(self.0.clone())
+        SharedBridge(self.0.clone())
     }
 }

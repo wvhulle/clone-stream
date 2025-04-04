@@ -39,8 +39,8 @@ where
         {
             Poll::Ready(item) => {
                 self.suspended_forks.append(item.clone(), fork_waker);
-                self.suspended_forks.wake_all();
                 self.suspended_forks.remove_buffer_if_empty(fork_waker);
+                self.suspended_forks.wake_all();
                 Poll::Ready(item)
             }
             Poll::Pending => {
