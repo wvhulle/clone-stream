@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, VecDeque},
     ops::{Deref, DerefMut},
     pin::Pin,
     task::{Context, Poll, Waker},
@@ -6,24 +7,22 @@ use std::{
 
 use futures::{Stream, StreamExt};
 
-use crate::task_item_queue::SuspendedForks;
-
 pub struct ForkBridge<BaseStream>
 where
     BaseStream: Stream,
 {
     pub base_stream: Pin<Box<BaseStream>>,
-    pub suspended_forks: SuspendedForks<Option<BaseStream::Item>>,
+    pub suspended_forks: BTreeMap<usize, (Option<Waker>, VecDeque<Option<BaseStream::Item>>)>,
 }
 
 impl<BaseStream> ForkBridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    pub fn new(base_stream: BaseStream, max_items_cached: Option<usize>) -> Self {
+    pub fn new(base_stream: BaseStream) -> Self {
         Self {
             base_stream: Box::pin(base_stream),
-            suspended_forks: SuspendedForks::new(max_items_cached),
+            suspended_forks: BTreeMap::default(),
         }
     }
 
@@ -31,30 +30,32 @@ where
         self.suspended_forks.clear();
     }
 
-    pub fn poll(&mut self, fork_waker: &Waker) -> Poll<Option<BaseStream::Item>> {
-        println!("Polling the bridge with waker: {:?}", fork_waker.data());
-        if let Some(item) = self.suspended_forks.earliest_item(fork_waker) {
-            println!("The passed waker has an associated item still waiting.");
-            self.suspended_forks.forget_if_queue_empty(fork_waker);
-            Poll::Ready(item)
-        } else {
-            println!("The passed waker does not have an associated item waiting.");
-            match self
+    pub fn poll(&mut self, fork_id: usize, fork_waker: &Waker) -> Poll<Option<BaseStream::Item>> {
+        let fork = self.suspended_forks.get_mut(&fork_id).unwrap();
+        match fork.1.pop_front() {
+            Some(item) => Poll::Ready(item),
+            None => match self
                 .base_stream
                 .poll_next_unpin(&mut Context::from_waker(fork_waker))
             {
                 Poll::Pending => {
-                    println!("There is no next item on the input stream.");
-                    self.suspended_forks.insert_empty_queue(fork_waker.clone());
+                    fork.0 = Some(fork_waker.clone());
                     Poll::Pending
                 }
                 Poll::Ready(item) => {
-                    println!("Got a next item from the input stream.");
-                    self.suspended_forks.append(item.clone(), fork_waker);
-                    self.suspended_forks.wake_all();
+                    fork.0 = Some(fork_waker.clone());
+                    self.suspended_forks
+                        .iter_mut()
+                        .filter(|(other_fork, _)| fork_id != **other_fork)
+                        .for_each(|(_, (waker, queue))| {
+                            if let Some(waker) = &waker {
+                                queue.push_back(item.clone());
+                                waker.wake_by_ref();
+                            }
+                        });
                     Poll::Ready(item)
                 }
-            }
+            },
         }
     }
 }

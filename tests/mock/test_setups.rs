@@ -17,13 +17,13 @@ pub type SimpleForkedStream<Item> = ForkedStream<UnboundedReceiver<Item>>;
 
 const TIME_PER_FORK_TO_RESOLVE: Duration = Duration::from_micros(500);
 
-pub fn send_fork<Item>(cache: Option<usize>) -> (UnboundedSender<Item>, SimpleForkedStream<Item>)
+pub fn send_fork<Item>() -> (UnboundedSender<Item>, SimpleForkedStream<Item>)
 where
     Item: Clone,
 {
     let (test_input_sender, test_input_receiver) = unbounded();
 
-    (test_input_sender, test_input_receiver.fork(cache))
+    (test_input_sender, test_input_receiver.fork())
 }
 
 pub struct WakerStream<Item>
@@ -56,9 +56,9 @@ impl<Item, const N: usize> ForkAsyncMockSetup<Item, N>
 where
     Item: Clone,
 {
-    pub fn new(cache: impl Into<Option<usize>>) -> Self {
+    pub fn new() -> Self {
         log_init();
-        let (input, output_stream) = send_fork::<Item>(cache.into());
+        let (input, output_stream) = send_fork::<Item>();
 
         ForkAsyncMockSetup {
             sender: input,

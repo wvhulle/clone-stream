@@ -1,31 +1,106 @@
+// A stream that implements `Clone` and takes input from the `BaseStream`i
 use std::{
+    collections::VecDeque,
     ops::{Deref, DerefMut},
     pin::Pin,
+    sync::{Arc, RwLock, Weak},
     task::{Context, Poll, Waker},
 };
 
 use futures::{Stream, stream::FusedStream};
+use log::warn;
 
-use crate::shared_bridge::SharedBridge;
+use crate::fork_bridge::ForkBridge;
 
-/// A stream that implements `Clone` and takes input from the `BaseStream`.
 pub struct ForkedStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    bridge: SharedBridge<BaseStream>,
-    last_task_polling: Option<Waker>,
+    bridge: Arc<RwLock<ForkBridge<BaseStream>>>,
+    id: usize,
 }
-
-impl<BaseStream> From<SharedBridge<BaseStream>> for ForkedStream<BaseStream>
+impl<BaseStream> ForkedStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fn from(bridge: SharedBridge<BaseStream>) -> Self {
-        ForkedStream {
-            bridge,
-            last_task_polling: None,
+    #[must_use]
+    pub fn new(mut bridge: ForkBridge<BaseStream>) -> Self {
+        let min_available = (0..)
+            .filter(|n| !bridge.suspended_forks.contains_key(n))
+            .nth(0)
+            .unwrap();
+        bridge
+            .suspended_forks
+            .insert(min_available, (None, VecDeque::default()));
+        Self {
+            id: min_available,
+            bridge: Arc::new(RwLock::new(bridge)),
         }
+    }
+
+    pub fn modify<R>(&self, modify: impl FnOnce(&mut ForkBridge<BaseStream>) -> R) -> R {
+        match self.write() {
+            Ok(mut bridge) => modify(&mut bridge),
+            Err(mut poisened) => {
+                warn!("The previous task who locked the bridge to modify it panicked");
+                let corrupted_bridge = poisened.get_mut();
+                corrupted_bridge.clear();
+                modify(corrupted_bridge)
+            }
+        }
+    }
+
+    pub fn get<R>(&self, get: impl FnOnce(&ForkBridge<BaseStream>) -> R) -> R {
+        match self.read() {
+            Ok(bridge) => get(&bridge),
+            Err(e) => {
+                warn!("The previous task who locked the bridge to read it panicked");
+
+                get(e.get_ref())
+            }
+        }
+    }
+}
+
+impl<BaseStream> From<ForkBridge<BaseStream>> for ForkedStream<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    fn from(bridge: ForkBridge<BaseStream>) -> Self {
+        Self::new(bridge)
+    }
+}
+
+impl<BaseStream> Clone for ForkedStream<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    fn clone(&self) -> Self {
+        let mut bridge = self.bridge.write().unwrap();
+        let min_available = (0..)
+            .filter(|n| !bridge.suspended_forks.contains_key(n))
+            .nth(0)
+            .unwrap();
+        bridge
+            .suspended_forks
+            .insert(min_available, (None, VecDeque::default()));
+        drop(bridge);
+
+        Self {
+            bridge: self.bridge.clone(),
+            id: min_available,
+        }
+    }
+}
+
+impl<BaseStream> Deref for ForkedStream<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    type Target = Arc<RwLock<ForkBridge<BaseStream>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bridge
     }
 }
 
@@ -35,22 +110,17 @@ where
 {
     type Item = BaseStream::Item;
 
-    fn poll_next(mut self: Pin<&mut Self>, current_task: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, current_task: &mut Context) -> Poll<Option<Self::Item>> {
         let waker = current_task.waker();
-        let poll_result = self.modify(|bridge| bridge.poll(waker));
-        self.last_task_polling = Some(waker.clone());
-        poll_result
+        self.modify(|bridge| bridge.poll(self.id, waker))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        match &self.last_task_polling {
-            Some(waker) => self.get(|bridge| {
-                let (lower, upper) = bridge.base_stream.size_hint();
-                let n_cached = bridge.suspended_forks.items_remaining(waker);
-                (lower + n_cached, upper.map(|u| u + n_cached))
-            }),
-            None => self.get(|bridge| bridge.base_stream.size_hint()),
-        }
+        self.get(|bridge| {
+            let (lower, upper) = bridge.base_stream.size_hint();
+            let n_cached = bridge.suspended_forks.get(&self.id).unwrap().1.len();
+            (lower + n_cached, upper.map(|u| u + n_cached))
+        })
     }
 }
 
@@ -59,41 +129,23 @@ where
     BaseStream: Stream<Item: Clone> + FusedStream,
 {
     fn is_terminated(&self) -> bool {
-        match &self.last_task_polling {
-            Some(waker) => self.get(|bridge| {
-                bridge.base_stream.is_terminated()
-                    && bridge.suspended_forks.items_remaining(waker) == 0
-            }),
-            None => self.get(|bridge| bridge.base_stream.is_terminated()),
-        }
+        self.get(|base_stream| {
+            base_stream.is_terminated()
+                && base_stream
+                    .suspended_forks
+                    .get(&self.id)
+                    .unwrap()
+                    .1
+                    .is_empty()
+        })
     }
 }
 
-impl<BaseStream> Clone for ForkedStream<BaseStream>
+impl<BaseStream> Drop for ForkedStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fn clone(&self) -> Self {
-        Self::from(self.bridge.clone())
-    }
-}
-
-impl<BaseStream> Deref for ForkedStream<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    type Target = SharedBridge<BaseStream>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.bridge
-    }
-}
-
-impl<BaseStream> DerefMut for ForkedStream<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.bridge
+    fn drop(&mut self) {
+        self.modify(|bridge| bridge.suspended_forks.remove(&self.id));
     }
 }
