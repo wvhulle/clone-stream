@@ -3,16 +3,15 @@ use std::{ops::Deref, sync::atomic::AtomicUsize, task::Context};
 use futures::task::{RawWaker, RawWakerVTable, Waker};
 // Define a simple raw waker implementation that does nothing
 
+fn raw_waker(data: *const ()) -> RawWaker {
+    RawWaker::new(data, &VTABLE)
+}
 const VTABLE: RawWakerVTable = RawWakerVTable::new(
     raw_waker, // clone
     |_| {},    // wake
     |_| {},    // wake_by_ref
     |_| {},    // drop
 );
-
-fn raw_waker(data: *const ()) -> RawWaker {
-    RawWaker::new(data, &VTABLE)
-}
 
 pub struct MockWaker(Waker);
 
@@ -40,21 +39,5 @@ impl Deref for MockWaker {
     type Target = Waker;
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-pub struct MockPollSetup {
-    wakers: Vec<MockWaker>,
-}
-
-impl MockPollSetup {
-    pub fn new(count: usize) -> Self {
-        Self {
-            wakers: (0..count).map(MockWaker::new).collect(),
-        }
-    }
-
-    pub fn context(&self, index: usize) -> Context<'_> {
-        self.wakers[index].context()
     }
 }

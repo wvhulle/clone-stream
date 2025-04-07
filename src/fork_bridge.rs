@@ -35,7 +35,7 @@ where
         println!("Polling the bridge with waker: {:?}", fork_waker.data());
         if let Some(item) = self.suspended_forks.earliest_item(fork_waker) {
             println!("The passed waker has an associated item still waiting.");
-            //self.suspended_forks.forget_if_queue_empty(fork_waker);
+            self.suspended_forks.forget_if_queue_empty(fork_waker);
             Poll::Ready(item)
         } else {
             println!("The passed waker does not have an associated item waiting.");
