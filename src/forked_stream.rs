@@ -1,16 +1,16 @@
 // A stream that implements `Clone` and takes input from the `BaseStream`i
 use std::{
     collections::VecDeque,
-    ops::{Deref, DerefMut},
+    ops::Deref,
     pin::Pin,
-    sync::{Arc, RwLock, Weak},
-    task::{Context, Poll, Waker},
+    sync::{Arc, RwLock},
+    task::{Context, Poll},
 };
 
 use futures::{Stream, stream::FusedStream};
 use log::warn;
 
-use crate::fork_bridge::ForkBridge;
+use crate::fork_bridge::{ForkBridge, ForkRef};
 
 pub struct ForkedStream<BaseStream>
 where
@@ -26,12 +26,10 @@ where
     #[must_use]
     pub fn new(mut bridge: ForkBridge<BaseStream>) -> Self {
         let min_available = (0..)
-            .filter(|n| !bridge.suspended_forks.contains_key(n))
+            .filter(|n| !bridge.forks.contains_key(n))
             .nth(0)
             .unwrap();
-        bridge
-            .suspended_forks
-            .insert(min_available, (None, VecDeque::default()));
+        bridge.forks.insert(min_available, ForkRef::default());
         Self {
             id: min_available,
             bridge: Arc::new(RwLock::new(bridge)),
@@ -78,12 +76,10 @@ where
     fn clone(&self) -> Self {
         let mut bridge = self.bridge.write().unwrap();
         let min_available = (0..)
-            .filter(|n| !bridge.suspended_forks.contains_key(n))
+            .filter(|n| !bridge.forks.contains_key(n))
             .nth(0)
             .unwrap();
-        bridge
-            .suspended_forks
-            .insert(min_available, (None, VecDeque::default()));
+        bridge.forks.insert(min_available, ForkRef::default());
         drop(bridge);
 
         Self {
@@ -118,7 +114,7 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.get(|bridge| {
             let (lower, upper) = bridge.base_stream.size_hint();
-            let n_cached = bridge.suspended_forks.get(&self.id).unwrap().1.len();
+            let n_cached = bridge.forks.get(&self.id).unwrap().items.len();
             (lower + n_cached, upper.map(|u| u + n_cached))
         })
     }
@@ -130,13 +126,7 @@ where
 {
     fn is_terminated(&self) -> bool {
         self.get(|base_stream| {
-            base_stream.is_terminated()
-                && base_stream
-                    .suspended_forks
-                    .get(&self.id)
-                    .unwrap()
-                    .1
-                    .is_empty()
+            base_stream.is_terminated() && base_stream.forks.get(&self.id).unwrap().items.is_empty()
         })
     }
 }
@@ -146,6 +136,6 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn drop(&mut self) {
-        self.modify(|bridge| bridge.suspended_forks.remove(&self.id));
+        self.modify(|bridge| bridge.forks.remove(&self.id));
     }
 }

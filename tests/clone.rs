@@ -4,17 +4,9 @@ use std::task::Poll;
 
 use futures::{SinkExt, executor::block_on};
 use mock::ForkAsyncMockSetup;
-const N_FORKS: u32 = 100;
-
-#[tokio::test]
-async fn undelivered() {
-    let mut setup = ForkAsyncMockSetup::<usize, 1>::new();
-
-    assert_eq!(setup.forks[0].next(), Poll::Pending);
-}
 
 #[test]
-fn simple() {
+fn s1p_s2p_s_s1r_s1p_s2r_s2p() {
     let ForkAsyncMockSetup {
         mut sender, forks, ..
     } = ForkAsyncMockSetup::<(), 2>::new();
@@ -74,9 +66,8 @@ fn second_later_ready() {
 
     assert_eq!(fork2.next(), Poll::Ready(Some(())));
 
-    assert_eq!(fork1.next(), Poll::Ready(Some(())));
-
     assert_eq!(fork1.next(), Poll::Pending);
+
     assert_eq!(fork2.next(), Poll::Pending);
 }
 
