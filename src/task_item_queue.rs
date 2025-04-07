@@ -56,7 +56,9 @@ where
             .iter_mut()
             .filter(|fork| !fork.task_waker.will_wake(waker))
             .for_each(|fork| {
+                println!("Pushing item on queue.");
                 if let Some(max) = self.max_buffered_items {
+                    println!("Shrinking the queue.");
                     fork.shrink(max);
                 }
                 fork.item_queue.push_back(item.clone());
@@ -71,27 +73,46 @@ where
     }
 
     pub fn earliest_item(&mut self, waker: &Waker) -> Option<Item> {
-        self.task_item_queues
+        let fork = self
+            .task_item_queues
             .iter_mut()
-            .find(|fork| fork.task_waker.will_wake(waker))?
-            .item_queue
-            .pop_front()
+            .find(|fork| fork.task_waker.will_wake(waker))?;
+
+        println!("Found a fork on queue for this waker. Popping.");
+
+        fork.item_queue.pop_front()
     }
 
     pub fn wake_all(&self) {
+        println!("Waking all tasks.");
         for fork in &self.task_item_queues {
+            println!("Waking a test.");
             fork.task_waker.wake_by_ref();
         }
     }
 
     pub fn insert_empty_queue(&mut self, waker: Waker) {
-        if !self
+        println!(
+            "There currently {} wakers waiting. Inserting empty queue for waker: {:?}",
+            self.task_item_queues.len(),
+            waker.data()
+        );
+        let existing = self
             .task_item_queues
             .iter()
-            .any(|fork| fork.task_waker.will_wake(&waker))
-        {
+            .find(|fork| fork.task_waker.will_wake(&waker));
+
+        if let Some(existing) = existing {
+            println!("Waker already added. Not adding empty queue.");
+        } else {
+            println!("Pushing the waker on the queue.");
             self.task_item_queues.push_back(TaskItemQueue::new(waker));
-        }
+        };
+
+        println!(
+            "There are currently {} wakers waiting.",
+            self.task_item_queues.len()
+        );
     }
 
     pub fn forget_if_queue_empty(&mut self, waker: &Waker) {

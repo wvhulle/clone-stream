@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
-
+mod context;
 mod spsc;
 mod test_setups;
 mod time_range;
@@ -13,6 +13,7 @@ use std::{
     time::Duration,
 };
 
+pub use context::{MockPollSetup, MockWaker};
 use forked_stream::ForkStream;
 use futures::{FutureExt, Stream, StreamExt, task::noop_waker};
 use log::{info, trace};

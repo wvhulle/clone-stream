@@ -1,10 +1,10 @@
 mod mock;
 
-use std::task::Poll;
+use std::task::{Context, Poll};
 
-use futures::{SinkExt, future::try_join_all};
+use futures::{SinkExt, StreamExt, executor::block_on, future::try_join_all};
 use log::trace;
-use mock::{ConcurrentSetup, TestableStream, TimeRange};
+use mock::{ConcurrentSetup, MockPollSetup, MockWaker, TestableStream, TimeRange};
 use tokio::time::sleep_until;
 
 const N_FORKS: u32 = 100;
@@ -20,6 +20,42 @@ async fn undelivered() {
     sleep_until(setup.time_range.middle()).await;
 
     primary_task.await.expect("Background task panicked.");
+}
+
+#[test]
+fn simple() {
+    println!("Starting test");
+
+    let mut fork_setup = ConcurrentSetup::<()>::new(None, N_FORKS as usize);
+
+    let mut poll_setup = MockPollSetup::new(2);
+    let mut stream_2 = fork_setup.forked_stream.clone();
+    println!("Polling the first stream for the first time.");
+    let poll_result_1 = fork_setup
+        .forked_stream
+        .poll_next_unpin(&mut poll_setup.context(0));
+
+    assert_eq!(poll_result_1, Poll::Pending);
+    println!("Polling the second stream for the first time.");
+    let poll_result_2 = stream_2.poll_next_unpin(&mut poll_setup.context(1));
+
+    assert_eq!(poll_result_2, Poll::Pending);
+
+    block_on(async {
+        println!("Sending the empty tuple.");
+        let _ = fork_setup.input_sink.send(()).await;
+        println!("Finishing the empty tuple.");
+    });
+
+    println!("Polling the first stream for the second time.");
+    let poll_result_1 = fork_setup
+        .forked_stream
+        .poll_next_unpin(&mut poll_setup.context(0));
+    assert_eq!(poll_result_1, Poll::Ready(Some(())));
+    println!("Polling the second stream for the second time.");
+    let poll_result_2 = stream_2.poll_next_unpin(&mut poll_setup.context(1));
+
+    assert_eq!(poll_result_2, Poll::Ready(Some(())));
 }
 
 #[tokio::test]
