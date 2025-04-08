@@ -10,7 +10,7 @@ use std::{
 use futures::{Stream, stream::FusedStream};
 use log::warn;
 
-use crate::fork_bridge::{ForkBridge, ForkRef};
+use crate::bridge::{ForkBridge, ForkRef};
 
 pub struct ForkedStream<BaseStream>
 where
@@ -25,11 +25,11 @@ where
 {
     #[must_use]
     pub fn new(mut bridge: ForkBridge<BaseStream>) -> Self {
-        brige.pending_waiter = None;
+        bridge.pending_waiter = None;
         bridge.forks.clear();
-        bridge.forks.insert(min_available, ForkRef::default());
+        bridge.forks.insert(0, ForkRef::default());
         Self {
-            id: min_available,
+            id: 0,
             bridge: Arc::new(RwLock::new(bridge)),
         }
     }

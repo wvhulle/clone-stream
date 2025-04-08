@@ -10,7 +10,7 @@ pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// Forks the stream into a new stream that can be cloned.
     /// The `max_buffered` parameter controls how many items can be buffered for each fork.
     fn fork(self) -> ForkedStream<Self> {
-        ForkedStream::from(ForkBridge::new(self))
+        ForkedStream::new(ForkBridge::new(self))
     }
 }
 
