@@ -41,10 +41,9 @@ where
 
         match fork.items.pop_front() {
             Some(item) => {
-           fork.waiting = fork.waiting.saturating_sub(1);
-            Poll::Ready(item)},
+                fork.waiting = fork.waiting.saturating_sub(1);
+                Poll::Ready(item)},
             None => {
-                
                 match self
                     .base_stream
                     .poll_next_unpin(&mut Context::from_waker(fork_waker))
@@ -54,7 +53,7 @@ where
                         Poll::Pending
                     }
                     Poll::Ready(item) => {
-                    fork.waiting = fork.waiting.saturating_sub(1);
+                        fork.waiting = fork.waiting.saturating_sub(1);
                         self.forks
                             .iter_mut()
                             .filter(|(other_fork, _)| fork_id != **other_fork)

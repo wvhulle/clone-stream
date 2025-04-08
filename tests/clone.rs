@@ -86,7 +86,10 @@
             let _ = sender.flush().await;
         });
         assert_eq!(fork1.next_a(), Poll::Ready(Some(())));
+        assert_eq!(fork1.next_a(), Poll::Ready(Some(())));
         assert_eq!(fork1.next_a(), Poll::Pending);
+
+    
     }
 
     #[test]
@@ -95,9 +98,6 @@
             mut sender, forks, ..
         } = ForkAsyncMockSetup::<(), 2>::new();
 
-        let [mut fork1, mut fork2] = forks;
-
-        assert_eq!(fork1.next_a(), Poll::Pending);
         assert_eq!(fork2.next_a(), Poll::Pending);
 
         block_on(async {
@@ -107,8 +107,9 @@
         });
 
         assert_eq!(fork1.next_a(), Poll::Ready(Some(())));
-        assert_eq!(fork1.next_a(), Poll::Ready(Some(())));
-
+        assert_eq!(fork2.next_a(), Poll::Ready(Some(())));
+assert_eq!(fork1.next_a(), Poll::Ready(Some(())));
+        assert_eq!(fork2.next_a(), Poll::Ready(Some(())));
         assert_eq!(fork1.next_a(), Poll::Pending);
 
         assert_eq!(fork2.next_a(), Poll::Pending);
