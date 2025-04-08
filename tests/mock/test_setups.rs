@@ -30,18 +30,29 @@ pub struct WakerStream<Item>
 where
     Item: Clone,
 {
-    waker: MockWaker,
+    waker_a: MockWaker,
+    waker_b: MockWaker,
     stream: SimpleForkedStream<Item>,
 }
+
 
 impl<Item> WakerStream<Item>
 where
     Item: Clone,
 {
-    pub fn next(&mut self) -> Poll<Option<Item>> {
-        self.stream.poll_next_unpin(&mut self.waker.context())
+    pub fn next_a(&mut self) -> Poll<Option<Item>> {
+        self.stream.poll_next_unpin(&mut self.waker_a.context())
     }
 }
+impl<Item> WakerStream<Item>
+where
+    Item: Clone,
+{
+    pub fn next_b(&mut self) -> Poll<Option<Item>> {
+        self.stream.poll_next_unpin(&mut self.waker_b.context())
+    }
+}
+
 
 pub struct ForkAsyncMockSetup<Item, const N: usize>
 where
@@ -63,7 +74,8 @@ where
         ForkAsyncMockSetup {
             sender: input,
             forks: [0; N].map(|i| WakerStream {
-                waker: MockWaker::new(i),
+                waker_a: MockWaker::new(2*i),
+                waker_b: MockWaker::new(2*i + 1),
                 stream: output_stream.clone(),
             }),
             time_range: TimeRange::from(TIME_PER_FORK_TO_RESOLVE * N.try_into().unwrap()),
