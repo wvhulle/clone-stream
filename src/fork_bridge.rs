@@ -41,7 +41,7 @@ where
 
         match fork.items.pop_front() {
             Some(item) => {
-           fork.waiting =-1;
+           fork.waiting -= 1;
             Poll::Ready(item)},
             None => {
                 
@@ -50,11 +50,11 @@ where
                     .poll_next_unpin(&mut Context::from_waker(fork_waker))
                 {
                     Poll::Pending => {
-                        fork.waiting =+ 1;
+                        fork.waiting += 1;
                         Poll::Pending
                     }
                     Poll::Ready(item) => {
-                    fork.waiting =- 1;
+                    fork.waiting -= 1;
                         self.forks
                             .iter_mut()
                             .filter(|(other_fork, _)| fork_id != **other_fork)
