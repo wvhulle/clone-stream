@@ -59,7 +59,7 @@ where
                             .iter_mut()
                             .filter(|(other_fork, _)| fork_id != **other_fork)
                             .for_each(|(_, fork)| {
-                                if fork.waiting > 0 && forks.items.len() < fork.waiting {
+                                if fork.waiting > 0 && fork.items.len() < fork.waiting {
                                     fork.items.push_back(item.clone());
                                 }
                             });
