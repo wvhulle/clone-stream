@@ -25,10 +25,8 @@ where
 {
     #[must_use]
     pub fn new(mut bridge: ForkBridge<BaseStream>) -> Self {
-        let min_available = (0..)
-            .filter(|n| !bridge.forks.contains_key(n))
-            .nth(0)
-            .unwrap();
+        brige.pending_waiter = None;
+        bridge.forks.clear();
         bridge.forks.insert(min_available, ForkRef::default());
         Self {
             id: min_available,
