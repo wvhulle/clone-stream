@@ -10,6 +10,7 @@ use forked_stream::{CloneStream, Fork, ForkStream};
 use futures::{
     FutureExt, Stream, StreamExt,
     channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded},
+    future::{join_all, try_join_all},
 };
 use log::{info, trace};
 use tokio::{
@@ -29,6 +30,12 @@ pub struct StreamWithWakers<const N_WAKERS: usize> {
     pub stream: CloneStream<Receiver>,
 }
 
+pub enum AssertError {
+    NotReady,
+    NotPending,
+    WrongRestult { expected: usize, actual: usize },
+}
+
 impl<const N_WAKERS: usize> StreamWithWakers<N_WAKERS> {
     /// # Panics
     ///
@@ -42,41 +49,44 @@ impl<const N_WAKERS: usize> StreamWithWakers<N_WAKERS> {
         self.stream.poll_next_unpin(&mut self.wakers[n].context())
     }
 
+    /// # Errors
+    ///
+    /// Errors when not as expected.
+    ///
     /// # Panics
     ///
-    /// Panics if the task life time is not in the future.
+    ///
     pub async fn assert_poll_now(
         &mut self,
         expected_poll_at_deadline: Poll<Option<usize>>,
         deadline: Instant,
-    ) {
+    ) -> Result<(), AssertError> {
         match expected_poll_at_deadline {
             Poll::Pending => {
-                println!(
-                    "We expect the item for fork {} to never be delivered.",
-                    self.stream.id
-                );
                 select! {
                     () = sleep_until(deadline) => {
-
+                        Ok(())
                     }
-                    item = self.stream.next() => {
-                        panic!("Fork {} should not have received an item, but it did: {item:?}", self.stream.id);
+                    _ = self.stream.next() => {
+                        Err(AssertError::NotPending)
                     }
 
                 }
             }
             Poll::Ready(expected) => {
-                println!(
-                    "We expect the item for fork {} to be delivered.",
-                    self.stream.id
-                );
                 select! {
                     () = sleep_until(deadline) => {
-                        panic!("Fork {} should have received an item, but it didn't.", self.stream.id);
+                       Err(AssertError::NotReady)
                     }
                     actual = self.stream.next() => {
-                        assert_eq!(actual, expected, "The item that was received by fork {} did not match the expectation.", self.stream.id);
+                        if actual == expected {
+                            Ok(())
+                        } else {
+                            Err(AssertError::WrongRestult {
+                                expected: expected.unwrap(),
+                                actual: actual.unwrap(),
+                            })
+                        }
                     }
 
                 }
@@ -93,7 +103,7 @@ impl<const N_WAKERS: usize> StreamWithWakers<N_WAKERS> {
         expected_poll_at_end: Poll<Option<usize>>,
 
         start_await_cancel_await: TimeRange,
-    ) -> JoinHandle<()> {
+    ) -> JoinHandle<Result<(), AssertError>> {
         tokio::spawn(async move {
             assert!(
                 start_await_cancel_await.start > Instant::now(),
@@ -104,7 +114,7 @@ impl<const N_WAKERS: usize> StreamWithWakers<N_WAKERS> {
             trace!("Waiting until stream should be polled in the background.");
             sleep_until(start_await_cancel_await.start).await;
             self.assert_poll_now(expected_poll_at_end, start_await_cancel_await.end)
-                .await;
+                .await
         })
     }
 }
@@ -152,5 +162,54 @@ where
 
     pub fn poll_one(&mut self) -> Poll<Option<usize>> {
         self.forks[0].as_mut().unwrap().poll_next()
+    }
+
+    pub async fn launch(
+        &mut self,
+        sub_range: impl Fn(usize) -> TimeRange,
+        do_inbetween: impl Future,
+    ) -> Metrics {
+        let wait_for_all = join_all(self.forks.iter_mut().enumerate().map(|(index, fork)| {
+            fork.take()
+                .unwrap()
+                .assert_background(Poll::Ready(Some(0)), sub_range(index))
+        }));
+
+        do_inbetween.await;
+
+        let results: Vec<_> = wait_for_all.await.into_iter().map(Result::unwrap).collect();
+
+        Metrics {
+            not_pending: results
+                .iter()
+                .filter(|result| matches!(result, Err(AssertError::NotPending)))
+                .count(),
+
+            not_ready: results
+                .iter()
+                .filter(|result| matches!(result, Err(AssertError::NotReady)))
+                .count(),
+            wrong_result: results
+                .iter()
+                .filter(|result| matches!(result, Err(AssertError::WrongRestult { .. })))
+                .count(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Metrics {
+    pub not_ready: usize,
+    pub not_pending: usize,
+    pub wrong_result: usize,
+}
+
+impl Metrics {
+    pub fn total(&self) -> usize {
+        self.not_ready + self.not_pending + self.wrong_result
+    }
+
+    pub fn is_successful(&self) -> bool {
+        self.not_ready == 0 && self.not_pending == 0 && self.wrong_result == 0
     }
 }

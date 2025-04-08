@@ -82,7 +82,7 @@ where
                                     trace!("Pushing item from input stream on queue of other fork {other_fork_id} because fork {fork_id} was polled");
                                     other_fork.items.push_back(item.clone());
                                     trace!("Waking up fork {other_fork_id} because it was polled");
-                                    waker.wake_by_ref();
+                                     waker.wake_by_ref();
                                 }
                             });
 

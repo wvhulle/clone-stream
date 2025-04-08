@@ -86,15 +86,28 @@ impl TimeRange {
     }
 
     #[must_use]
-    pub fn sequential_overlapping_sub_ranges(&self, n: usize) -> Vec<Self> {
-        let start_end = self.split(2, 0.0);
+    pub fn sequential_overlapping_sub_ranges_from(
+        within: Duration,
+        n: u32,
+        spacing: Duration,
+    ) -> Vec<Self> {
+        let now = Instant::now();
+        let end = now + within + spacing * n;
+        (0..n)
+            .map(|i| {
+                let start = now + within + spacing * i;
 
-        let start_moments = start_end[0].inner(0.1).moments(n);
-        let end = start_end[1].middle();
-        start_moments
-            .iter()
-            .map(|start| Self { start: *start, end })
+                TimeRange { start, end }
+            })
             .collect()
+    }
+
+    #[must_use]
+    pub fn after_for(after: Duration, duration: Duration) -> Self {
+        let now = Instant::now();
+        let start = now + after;
+        let end = start + duration;
+        TimeRange { start, end }
     }
 
     #[must_use]
