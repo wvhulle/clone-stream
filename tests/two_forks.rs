@@ -108,8 +108,8 @@
         assert_eq!(fork1.next_a(), Poll::Pending);
         assert_eq!(fork2.next_a(), Poll::Pending);
         block_on(async {
-            let _ = sender.start_send(0).await;
-            let _ = sender.start_send(0).await;
+            let _ = sender.start_send(0);
+            let _ = sender.start_send(0);
             sender.flush().await;
         });
     
