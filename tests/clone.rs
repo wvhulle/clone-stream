@@ -97,7 +97,7 @@
         let ForkAsyncMockSetup {
             mut sender, forks, ..
         } = ForkAsyncMockSetup::<(), 2>::new();
-
+   let [mut fork1, mut fork2] = forks;
         assert_eq!(fork2.next_a(), Poll::Pending);
 
         block_on(async {
