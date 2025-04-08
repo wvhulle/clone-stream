@@ -13,17 +13,25 @@ const VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| {},    // drop
 );
 
+static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 pub struct MockWaker(Waker);
 
 impl MockWaker {
-    pub fn new(count: usize) -> Self {
-        let u = Box::new(count);
+    pub fn new() -> Self {
+        let u = Box::new(COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
         let ptr = Box::into_raw(u) as *const ();
         Self(unsafe { Waker::from_raw(raw_waker(ptr)) })
     }
 
     pub fn context(&self) -> Context<'_> {
         Context::from_waker(self)
+    }
+}
+
+impl Default for MockWaker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

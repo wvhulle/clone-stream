@@ -6,10 +6,11 @@ use std::{
 };
 
 use futures::{Stream, StreamExt};
+use log::trace;
 
 #[derive(Default)]
 pub struct ForkRef<Item> {
-    pub pending_waker: bool,
+    pub pending_waker: Option<Waker>,
     pub items: VecDeque<Item>,
 }
 
@@ -37,30 +38,54 @@ where
     }
 
     pub fn poll(&mut self, fork_id: usize, fork_waker: &Waker) -> Poll<Option<BaseStream::Item>> {
+        trace!("Fork {fork_id} is being polled on the bridge.");
         let fork = self.forks.get_mut(&fork_id).unwrap();
+
+        if fork
+            .pending_waker
+            .as_ref()
+            .is_some_and(|old_waker| old_waker.will_wake(fork_waker))
+        {
+            fork.pending_waker = Some(fork_waker.clone());
+        }
 
         match fork.items.pop_front() {
             Some(item) => {
-                Poll::Ready(item)},
+                trace!("Popping item for fork {fork_id} from queue");
+
+                Poll::Ready(item)
+            }
             None => {
                 match self
                     .base_stream
                     .poll_next_unpin(&mut Context::from_waker(fork_waker))
                 {
                     Poll::Pending => {
-                        fork.pending_waker = true;
+                        trace!("No ready item from input stream available for fork {fork_id}");
+                        fork.pending_waker = Some(fork_waker.clone());
                         Poll::Pending
                     }
                     Poll::Ready(item) => {
-                        fork.pending_waker = false;
+                        trace!("Item ready from input stream for fork {fork_id}");
+                        if fork.items.is_empty() {
+                            trace!(
+                                "Since there are no remaining items in the queue of fork {fork_id}, we will set the waker to None"
+                            );
+                            fork.pending_waker = None;
+                        }
+
                         self.forks
                             .iter_mut()
                             .filter(|(other_fork, _)| fork_id != **other_fork)
-                            .for_each(|(_, fork)| {
-                                if fork.pending_waker {
-                                    fork.items.push_back(item.clone());
+                            .for_each(|(other_fork_id, other_fork)| {
+                                if let Some(waker) = &other_fork.pending_waker {
+                                    trace!("Pushing item from input stream on queue of other fork {other_fork_id} because fork {fork_id} was polled");
+                                    other_fork.items.push_back(item.clone());
+                                    trace!("Waking up fork {other_fork_id} because it was polled");
+                                    waker.wake_by_ref();
                                 }
                             });
+
                         Poll::Ready(item)
                     }
                 }

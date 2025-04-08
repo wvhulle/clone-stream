@@ -1,11 +1,12 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
-mod context;
 
-mod test_setups;
+mod clone_stream;
+
+mod set_log_level;
 mod time_range;
+mod wakers_context;
 
-mod test_log;
 use core::panic;
 use std::{
     fmt::Debug,
@@ -13,15 +14,10 @@ use std::{
     time::Duration,
 };
 
-pub use context::MockWaker;
+pub use clone_stream::{ForkAsyncMockSetup, StreamWithWakers};
 use forked_stream::ForkStream;
 use futures::{FutureExt, Stream, StreamExt, task::noop_waker};
 use log::{info, trace};
-pub use test_log::log_init;
-pub use test_setups::{ForkAsyncMockSetup, send_fork};
+pub use set_log_level::log_init;
 pub use time_range::TimeRange;
-use tokio::{
-    select,
-    task::JoinHandle,
-    time::{Instant, sleep_until, timeout},
-};
+pub use wakers_context::MockWaker;
