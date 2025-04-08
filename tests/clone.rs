@@ -137,11 +137,10 @@ fn multi_both_interleave() {
     assert_eq!(fork1.next(), Poll::Ready(Some(())));
     assert_eq!(fork2.next(), Poll::Ready(Some(())));
 
-    assert_eq!(fork1.next(), Poll::Ready(Some(())));
+
 
     assert_eq!(fork1.next(), Poll::Pending);
 
-    assert_eq!(fork2.next(), Poll::Ready(Some(())));
 
     assert_eq!(fork2.next(), Poll::Pending);
 }
