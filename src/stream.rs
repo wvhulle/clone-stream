@@ -25,7 +25,6 @@ where
 {
     #[must_use]
     pub fn new(mut bridge: ForkBridge<BaseStream>) -> Self {
-        bridge.pending_waiter = None;
         bridge.forks.clear();
         bridge.forks.insert(0, ForkRef::default());
         Self {
