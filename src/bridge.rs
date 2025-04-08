@@ -41,7 +41,7 @@ where
 
         match fork.items.pop_front() {
             Some(item) => {
-                fork.pending_waker = Some(fork_waker.clone());
+                fork.pending_waker = None;
                 Poll::Ready(item)},
             None => {
                 match self
