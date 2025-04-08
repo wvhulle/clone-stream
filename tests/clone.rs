@@ -135,7 +135,7 @@
         assert_eq!(fork1.next_a(), Poll::Ready(Some(())));
         assert_eq!(fork2.next_a(), Poll::Ready(Some(())));
 
-       assert_eq!(fork1_b.next(), Poll::Ready(Some(())));
+       assert_eq!(fork1.next_b(), Poll::Ready(Some(())));
 
         assert_eq!(fork1.next_a(), Poll::Pending);
    assert_eq!(fork1.next_b(), Poll::Pending);
