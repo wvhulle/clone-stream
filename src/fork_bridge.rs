@@ -9,7 +9,7 @@ use futures::{Stream, StreamExt};
 
 #[derive(Default)]
 pub struct ForkRef<Item> {
-    pub waiting: usize,
+    pub pending_waker: Option<Waker>,
     pub items: VecDeque<Item>,
 }
 
@@ -41,7 +41,7 @@ where
 
         match fork.items.pop_front() {
             Some(item) => {
-                fork.waiting = fork.waiting.saturating_sub(1);
+                fork.pending_waker = None;
                 Poll::Ready(item)},
             None => {
                 match self
@@ -49,16 +49,16 @@ where
                     .poll_next_unpin(&mut Context::from_waker(fork_waker))
                 {
                     Poll::Pending => {
-                        fork.waiting = fork.waiting.saturating_add(1);
+                        fork.pending_waker = Some(fork_waker.clone());
                         Poll::Pending
                     }
                     Poll::Ready(item) => {
-                        fork.waiting = fork.waiting.saturating_sub(1);
+                        fork.pending_waker = None;
                         self.forks
                             .iter_mut()
                             .filter(|(other_fork, _)| fork_id != **other_fork)
                             .for_each(|(_, fork)| {
-                                if fork.waiting > 0 && fork.items.len() < fork.waiting {
+                                if fork.pending_waker.is_some() {
                                     fork.items.push_back(item.clone());
                                 }
                             });
