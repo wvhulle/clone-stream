@@ -54,47 +54,48 @@ where
         self.forks[0].as_mut().unwrap().poll_now()
     }
 
-    pub async fn launch(
+    pub async fn poll_forks_background(
         &mut self,
-        sub_range: impl Fn(usize) -> TimeRange,
-        do_inbetween: impl Future,
-    ) -> FinalState {
+        poll_abort: impl Fn(usize) -> TimeRange,
+        sender_action: impl Future,
+    ) -> ForkAbortState {
         let wait_for_all = join_all(self.forks.iter_mut().enumerate().map(|(index, fork)| {
             fork.take()
                 .unwrap()
-                .assert_background(Poll::Ready(Some(0)), sub_range(index))
+                .move_to_background_poll_abort(Poll::Ready(Some(0)), poll_abort(index))
         }));
 
-        do_inbetween.await;
+        sender_action.await;
 
-        let results: Vec<_> = wait_for_all.await.into_iter().map(Result::unwrap).collect();
+        let fork_task_results: Vec<_> =
+            wait_for_all.await.into_iter().map(Result::unwrap).collect();
 
-        FinalState {
-            not_pending: results
+        ForkAbortState {
+            not_pending: fork_task_results
                 .iter()
                 .filter(|result| matches!(result, Err(StreamNextPollError::NotPending)))
                 .count(),
 
-            not_ready: results
+            not_ready: fork_task_results
                 .iter()
                 .filter(|result| matches!(result, Err(StreamNextPollError::NotReady)))
                 .count(),
-            wrong_result: results
+            wrong_result: fork_task_results
                 .iter()
-                .filter(|result| matches!(result, Err(StreamNextPollError::UnexpectedValue { .. })))
+                .filter(|result| matches!(result, Err(StreamNextPollError::Unexpected { .. })))
                 .count(),
         }
     }
 }
 
 #[derive(Debug)]
-pub struct FinalState {
+pub struct ForkAbortState {
     pub not_ready: usize,
     pub not_pending: usize,
     pub wrong_result: usize,
 }
 
-impl FinalState {
+impl ForkAbortState {
     pub fn total(&self) -> usize {
         self.not_ready + self.not_pending + self.wrong_result
     }

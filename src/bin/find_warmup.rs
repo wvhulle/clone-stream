@@ -1,21 +1,15 @@
-use std::time::Duration;
-
 use forked_stream::{
-    TOKIO_TASK_STARTUP, average_warmup, enable_debug_log, find_average_min, floats_from_to,
+    LOAD_TOKIO_TASK, average_warmup, enable_debug_log, find_average_min, floats_from_to,
     ints_from_to,
 };
-
-fn warmup(n: usize, factor: f32) -> Duration {
-    let n = f32::from(u16::try_from(n).unwrap());
-
-    TOKIO_TASK_STARTUP.mul_f32(n * factor)
-}
 
 #[tokio::main]
 async fn main() {
     enable_debug_log();
     let results = find_average_min(
-        |n_forks, factor| async move { average_warmup(n_forks).await < warmup(n_forks, factor) },
+        |n_forks, samp_mul_fact| async move {
+            average_warmup(n_forks).await < LOAD_TOKIO_TASK.mul_f32(n_forks as f32 * samp_mul_fact)
+        },
         ints_from_to(2, 1000, 30),
         floats_from_to(0.001, 0.02, 0.01),
         20,
