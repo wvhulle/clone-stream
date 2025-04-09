@@ -1,25 +1,14 @@
-use std::{
-    ops::{Deref, DerefMut},
-    sync::atomic::{AtomicUsize, Ordering},
-    task::Poll,
-    time::Duration,
-};
+use std::task::Poll;
 
-use chrono::format::Item;
-use futures::{
-    FutureExt, Stream, StreamExt,
-    channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded},
-    future::{join_all, try_join_all},
-};
-use log::{info, trace};
+use futures::{StreamExt, channel::mpsc::UnboundedReceiver};
 use tokio::{
     select,
     task::JoinHandle,
-    time::{Instant, sleep_until, timeout},
+    time::{Instant, sleep_until},
 };
 
 use super::{MockWaker, TimeRange};
-use crate::{CloneStream, Fork, ForkStream};
+use crate::CloneStream;
 
 type Receiver = UnboundedReceiver<usize>;
 
@@ -31,13 +20,10 @@ pub struct ForkWithMockWakers<const N_WAKERS: usize> {
 pub enum StreamNextPollError {
     NotReady,
     NotPending,
-    UnexpectedValue { expected: usize, actual: usize },
+    Unexpected { expected: usize, actual: usize },
 }
 
 impl<const N_WAKERS: usize> ForkWithMockWakers<N_WAKERS> {
-    /// # Panics
-    ///
-    /// Panics if there if `N_WAKERS` is 0.
     pub fn poll_now(&mut self) -> Poll<Option<usize>> {
         self.stream
             .poll_next_unpin(&mut self.wakers.first().unwrap().context())
@@ -47,10 +33,7 @@ impl<const N_WAKERS: usize> ForkWithMockWakers<N_WAKERS> {
         self.stream.poll_next_unpin(&mut self.wakers[n].context())
     }
 
-    /// # Errors
-    ///
-    /// Errors when not as expected.
-    pub async fn assert_poll_now(
+    pub async fn poll_abort_assert(
         &mut self,
         expected_poll_at_deadline: Poll<Option<usize>>,
         deadline: Instant,
@@ -76,7 +59,7 @@ impl<const N_WAKERS: usize> ForkWithMockWakers<N_WAKERS> {
                         if actual == expected {
                             Ok(())
                         } else {
-                            Err(StreamNextPollError::UnexpectedValue {
+                            Err(StreamNextPollError::Unexpected {
                                 expected: expected.unwrap(),
                                 actual: actual.unwrap(),
                             })
@@ -89,16 +72,15 @@ impl<const N_WAKERS: usize> ForkWithMockWakers<N_WAKERS> {
     }
 
     #[must_use]
-    pub fn assert_background(
+    pub fn move_to_background_poll_abort(
         mut self,
-        expected_poll_at_end: Poll<Option<usize>>,
+        expected: Poll<Option<usize>>,
 
-        start_await_cancel_await: TimeRange,
+        poll_abort: TimeRange,
     ) -> JoinHandle<Result<(), StreamNextPollError>> {
         tokio::spawn(async move {
-            sleep_until(start_await_cancel_await.start).await;
-            self.assert_poll_now(expected_poll_at_end, start_await_cancel_await.end)
-                .await
+            sleep_until(poll_abort.start).await;
+            self.poll_abort_assert(expected, poll_abort.end).await
         })
     }
 }

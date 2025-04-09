@@ -13,15 +13,15 @@ const VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| {},    // drop
 );
 
-static COUNTER: AtomicUsize = AtomicUsize::new(0);
+static WAKER_ID: AtomicUsize = AtomicUsize::new(0);
 
 pub struct MockWaker(Waker);
 
 impl MockWaker {
     pub fn new() -> Self {
-        let u = Box::new(COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
-        let ptr = Box::into_raw(u) as *const ();
-        Self(unsafe { Waker::from_raw(raw_waker(ptr)) })
+        let uniq_heap_alloc = Box::new(WAKER_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+        let raw_ptr = Box::into_raw(uniq_heap_alloc) as *const ();
+        Self(unsafe { Waker::from_raw(raw_waker(raw_ptr)) })
     }
 
     pub fn context(&self) -> Context<'_> {
