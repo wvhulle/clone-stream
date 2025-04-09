@@ -1,13 +1,8 @@
-name: Rust
+name: Scripts run on every push
+description: This workflow runs scripts for every push on every branch.
 
 on:
   push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
-
-permissions:
-  contents: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -36,16 +31,3 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Run tests
         run: cargo test --verbose
-
-  fix:
-    name: Fix formatting and typos
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Install correct Rust version
-        uses: dtolnay/rust-toolchain@stable
-      - name: Fix formatting and simple mistakes
-        uses: MarcoIeni/cargo-assist@v0.1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
