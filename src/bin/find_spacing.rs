@@ -1,9 +1,12 @@
 use forked_stream::{
-    TOKIO_TASK_STARTUP, find_average_min, floats_from_to, ints_from_to, spacing_wide_enough,
+    TOKIO_TASK_STARTUP, enable_debug_log, find_average_min, floats_from_to, ints_from_to,
+    spacing_wide_enough,
 };
 
 #[tokio::main]
 async fn main() {
+    enable_debug_log();
+
     let results = find_average_min(
         |n_forks, factor| async move {
             spacing_wide_enough(n_forks, TOKIO_TASK_STARTUP.mul_f32(n_forks as f32 * factor)).await
@@ -14,5 +17,5 @@ async fn main() {
     )
     .await;
 
-    println!("Results: {results:?}");
+    println!("Results: {results:#?}");
 }

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use forked_stream::{TOKIO_TASK_STARTUP, average_warmup};
+use forked_stream::{TOKIO_TASK_STARTUP, average_warmup, enable_debug_log as enable_debug_log};
 
 fn estimated_warmup(n: usize) -> Duration {
     let n = f32::from(u16::try_from(n).unwrap());
@@ -22,6 +22,7 @@ fn estimated_warmup(n: usize) -> Duration {
 
 #[tokio::main]
 async fn main() {
+    enable_debug_log();
     let n_forks = 10;
 
     println!(

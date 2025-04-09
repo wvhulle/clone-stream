@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use forked_stream::{TOKIO_TASK_STARTUP, average_time_to_resume_and_receive};
+use forked_stream::{TOKIO_TASK_STARTUP, average_time_to_resume_and_receive, enable_debug_log};
 
 fn estimated_resume(n: usize) -> Duration {
     let n = f32::from(u16::try_from(n).unwrap());
@@ -16,7 +16,7 @@ fn estimated_resume(n: usize) -> Duration {
 
 #[tokio::main]
 async fn main() {
-    println!("Testing resume time...");
+    enable_debug_log();
     let n_forks = 50;
     println!(
         "Measured: {:?}, estimated: {:?}",

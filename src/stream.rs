@@ -7,64 +7,11 @@ use std::{
 };
 
 use futures::{Stream, stream::FusedStream};
-use log::warn;
 
-use crate::bridge::{ForkBridge, ForkRef};
-
-pub struct Fork<BaseStream>(Arc<RwLock<ForkBridge<BaseStream>>>)
-where
-    BaseStream: Stream<Item: Clone>;
-impl<BaseStream> Fork<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    #[must_use]
-    pub fn new(mut bridge: ForkBridge<BaseStream>) -> Self {
-        bridge.forks.clear();
-        bridge.forks.insert(0, ForkRef::default());
-        Self(Arc::new(RwLock::new(bridge)))
-    }
-
-    pub fn get<R>(&self, get: impl FnOnce(&ForkBridge<BaseStream>) -> R) -> R {
-        match self.read() {
-            Ok(bridge) => get(&bridge),
-            Err(e) => {
-                warn!("The previous task who locked the bridge to read it panicked");
-
-                get(e.get_ref())
-            }
-        }
-    }
-}
-
-impl<BaseStream> Clone for Fork<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<BaseStream> Deref for Fork<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    type Target = Arc<RwLock<ForkBridge<BaseStream>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<BaseStream> DerefMut for Fork<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+use crate::{
+    Fork,
+    bridge::{Bridge, ForkRef},
+};
 
 pub struct CloneStream<BaseStream>
 where
@@ -86,15 +33,6 @@ where
             id: 0,
             bridge: fork,
         }
-    }
-}
-
-impl<BaseStream> From<ForkBridge<BaseStream>> for Fork<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn from(bridge: ForkBridge<BaseStream>) -> Self {
-        Self::new(bridge)
     }
 }
 
@@ -122,7 +60,7 @@ impl<BaseStream> Deref for CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    type Target = Arc<RwLock<ForkBridge<BaseStream>>>;
+    type Target = Arc<RwLock<Bridge<BaseStream>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.bridge

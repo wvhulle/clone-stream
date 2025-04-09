@@ -13,7 +13,7 @@ pub struct ForkRef<Item> {
     pub items: VecDeque<Item>,
 }
 
-pub struct ForkBridge<BaseStream>
+pub struct Bridge<BaseStream>
 where
     BaseStream: Stream,
 {
@@ -21,7 +21,7 @@ where
     pub forks: BTreeMap<usize, ForkRef<Option<BaseStream::Item>>>,
 }
 
-impl<BaseStream> ForkBridge<BaseStream>
+impl<BaseStream> Bridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
@@ -93,7 +93,7 @@ where
     }
 }
 
-impl<BaseStream> Deref for ForkBridge<BaseStream>
+impl<BaseStream> Deref for Bridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
@@ -103,7 +103,7 @@ where
         &self.base_stream
     }
 }
-impl<BaseStream> DerefMut for ForkBridge<BaseStream>
+impl<BaseStream> DerefMut for Bridge<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {

@@ -18,14 +18,12 @@ use tokio::{
     time::{Instant, sleep_until, timeout},
 };
 
-use super::{MockWaker, TimeRange, set_log_level::log_init};
+use super::{MockWaker, TimeRange};
 use crate::{CloneStream, Fork, ForkStream};
 
 type Receiver = UnboundedReceiver<usize>;
 
-static TEST_FORK_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-pub struct StreamWithWakers<const N_WAKERS: usize> {
+pub struct ForkWithMockWakers<const N_WAKERS: usize> {
     pub wakers: [MockWaker; N_WAKERS],
     pub stream: CloneStream<Receiver>,
 }
@@ -33,29 +31,25 @@ pub struct StreamWithWakers<const N_WAKERS: usize> {
 pub enum StreamNextPollError {
     NotReady,
     NotPending,
-    WrongRestult { expected: usize, actual: usize },
+    UnexpectedValue { expected: usize, actual: usize },
 }
 
-impl<const N_WAKERS: usize> StreamWithWakers<N_WAKERS> {
+impl<const N_WAKERS: usize> ForkWithMockWakers<N_WAKERS> {
     /// # Panics
     ///
     /// Panics if there if `N_WAKERS` is 0.
-    pub fn poll_next(&mut self) -> Poll<Option<usize>> {
+    pub fn poll_now(&mut self) -> Poll<Option<usize>> {
         self.stream
             .poll_next_unpin(&mut self.wakers.first().unwrap().context())
     }
 
-    pub fn poll_next_with_waker(&mut self, n: usize) -> Poll<Option<usize>> {
+    pub fn poll_waker_now(&mut self, n: usize) -> Poll<Option<usize>> {
         self.stream.poll_next_unpin(&mut self.wakers[n].context())
     }
 
     /// # Errors
     ///
     /// Errors when not as expected.
-    ///
-    /// # Panics
-    ///
-    ///
     pub async fn assert_poll_now(
         &mut self,
         expected_poll_at_deadline: Poll<Option<usize>>,
@@ -82,7 +76,7 @@ impl<const N_WAKERS: usize> StreamWithWakers<N_WAKERS> {
                         if actual == expected {
                             Ok(())
                         } else {
-                            Err(StreamNextPollError::WrongRestult {
+                            Err(StreamNextPollError::UnexpectedValue {
                                 expected: expected.unwrap(),
                                 actual: actual.unwrap(),
                             })
@@ -94,9 +88,6 @@ impl<const N_WAKERS: usize> StreamWithWakers<N_WAKERS> {
         }
     }
 
-    /// # Panics
-    ///
-    /// Panics if the task life time is not in the future.
     #[must_use]
     pub fn assert_background(
         mut self,

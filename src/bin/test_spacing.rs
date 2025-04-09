@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use forked_stream::{TOKIO_TASK_STARTUP, spacing_wide_enough};
+use forked_stream::{TOKIO_TASK_STARTUP, enable_debug_log, spacing_wide_enough};
 
 fn estimated_spacing(n: usize) -> Duration {
     let n = f32::from(u16::try_from(n).unwrap());
@@ -22,6 +22,7 @@ fn estimated_spacing(n: usize) -> Duration {
 
 #[tokio::main]
 async fn main() {
+    enable_debug_log();
     let n_forks = 200;
     let results = spacing_wide_enough(n_forks, estimated_spacing(n_forks)).await;
 

@@ -3,7 +3,7 @@ use std::time::Duration;
 pub const TOKIO_TASK_STARTUP: Duration = Duration::from_micros(1000);
 
 #[must_use]
-pub fn warmup(n: usize) -> Duration {
+pub fn time_start_tokio_task(n: usize) -> Duration {
     let n = f32::from(u16::try_from(n).unwrap());
 
     let factor = if n < 12.0 {
@@ -22,12 +22,12 @@ pub fn warmup(n: usize) -> Duration {
 }
 
 #[must_use]
-pub fn fork_warmup(n: usize) -> Duration {
-    warmup(n).mul_f32(5.0)
+pub fn time_fork_needs_to_wake_and_receive(n: usize) -> Duration {
+    time_start_tokio_task(n).mul_f32(5.0)
 }
 
 #[must_use]
-pub fn resume(n: usize) -> Duration {
+pub fn time_to_receive_after_send(n: usize) -> Duration {
     let n = f32::from(u16::try_from(n).unwrap());
     let factor = if n < 10.0 {
         0.15
@@ -40,21 +40,12 @@ pub fn resume(n: usize) -> Duration {
 }
 
 #[must_use]
-pub fn resume_forks(n: usize) -> Duration {
-    resume(n).mul_f32(5.0)
+pub fn time_to_receive_on_fork_after_input(n: usize) -> Duration {
+    time_to_receive_after_send(n).mul_f32(5.0)
 }
 
 #[must_use]
-pub fn wake_up_time(n: usize) -> Duration {
-    let n = f32::from(u16::try_from(n).unwrap());
-
-    let factor = 3.0;
-
-    TOKIO_TASK_STARTUP.mul_f32(n * factor)
-}
-
-#[must_use]
-pub fn spacing_required(n: usize) -> Duration {
+pub fn space_required_consecutive_fork_polls(n: usize) -> Duration {
     let n = f32::from(u16::try_from(n).unwrap());
 
     let factor = if n < 10.0 {

@@ -2,7 +2,7 @@ use std::io::Write;
 
 use log::LevelFilter;
 
-pub fn log_init() {
+pub fn enable_debug_log() {
     let _ = env_logger::Builder::new()
         .format(|buf, record| {
             writeln!(

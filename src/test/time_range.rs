@@ -89,11 +89,7 @@ impl TimeRange {
     ///
     /// Panics when `n` is less than 2.
     #[must_use]
-    pub fn sequential_overlapping_sub_ranges_from(
-        within: Duration,
-        n: usize,
-        spacing: Duration,
-    ) -> Vec<Self> {
+    pub fn consecutive(within: Duration, n: usize, spacing: Duration) -> Vec<Self> {
         assert!(n >= 2, "Cannot create sub ranges with less than 2 ranges");
         let now = Instant::now();
         let end = now + within + spacing * (n as u32);
