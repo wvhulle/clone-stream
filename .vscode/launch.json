@@ -26,16 +26,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug integration test 'not_too_fast'",
+            "name": "Debug integration test 'one_fork'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--test=not_too_fast",
+                    "--test=one_fork",
                     "--package=forked_stream"
                 ],
                 "filter": {
-                    "name": "not_too_fast",
+                    "name": "one_fork",
                     "kind": "test"
                 }
             },
@@ -45,16 +45,92 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug integration test 'sharing_is_caring'",
+            "name": "Debug integration test 'one_fork_two_tasks'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--test=sharing_is_caring",
+                    "--test=one_fork_two_tasks",
                     "--package=forked_stream"
                 ],
                 "filter": {
-                    "name": "sharing_is_caring",
+                    "name": "one_fork_two_tasks",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'time_range_operations'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=time_range_operations",
+                    "--package=forked_stream"
+                ],
+                "filter": {
+                    "name": "time_range_operations",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'tokio'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=tokio",
+                    "--package=forked_stream"
+                ],
+                "filter": {
+                    "name": "tokio",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'two_forks'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=two_forks",
+                    "--package=forked_stream"
+                ],
+                "filter": {
+                    "name": "two_forks",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'wakers_distinct'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=wakers_distinct",
+                    "--package=forked_stream"
+                ],
+                "filter": {
+                    "name": "wakers_distinct",
                     "kind": "test"
                 }
             },

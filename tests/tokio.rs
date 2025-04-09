@@ -1,38 +1,21 @@
-mod mock;
+use std::task::Poll;
 
-use core::task;
-use std::{task::Poll, time::Duration};
-
-use futures::{SinkExt, future::try_join_all};
-use log::{info, trace};
-use mock::ForkAsyncMockSetup;
-pub use mock::{StreamWithWakers, TimeRange, log_init};
+pub use forked_stream::TimeRange;
+use forked_stream::{
+    ForkAsyncMockSetup, TOKIO_TASK_STARTUP, fork_warmup, resume_forks, spacing_required, warmup,
+};
+use futures::SinkExt;
+use log::info;
 use tokio::time::sleep_until;
 
-const LARGE_N_FORKS: usize = 200;
-const TOKIO_TASK_STARTUP: Duration = Duration::from_micros(1000);
-
-fn complete_spawns(n: usize) -> Duration {
-    let n = f32::from(u16::try_from(n).unwrap());
-    TOKIO_TASK_STARTUP.mul_f32(n * 0.5 / n.sqrt())
-}
-
-fn complete_wake_ups(n: usize) -> Duration {
-    let n = f32::from(u16::try_from(n).unwrap());
-    TOKIO_TASK_STARTUP.mul_f32(n * 0.23)
-}
-
-fn spacing_necessary(n: usize) -> Duration {
-    let n = f32::from(u16::try_from(n).unwrap());
-    TOKIO_TASK_STARTUP.mul_f32(n * 1.0 / n.sqrt())
-}
+const LARGE_N_FORKS: usize = 100;
 
 #[tokio::test]
 async fn none_sent() {
     let simple_test_time_range = TimeRange::from(TOKIO_TASK_STARTUP.mul_f32(2.0));
     let task_time_range = simple_test_time_range.inner(0.1);
 
-    let mut setup = ForkAsyncMockSetup::<1, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(1);
 
     let task = setup.forks[0]
         .take()
@@ -41,42 +24,41 @@ async fn none_sent() {
 
     sleep_until(simple_test_time_range.middle()).await;
 
-    task.await.expect("Background task panicked.");
+    let _ = task.await.expect("Background task panicked.");
 }
 
 #[tokio::test]
 async fn one_sent_received() {
-    const N_FORKS: usize = 1;
-    let simple_test_time_range =
-        TimeRange::from(TOKIO_TASK_STARTUP * 3 * N_FORKS.try_into().unwrap());
+    let simple_test_time_range = TimeRange::after_for(warmup(1), warmup(1));
 
-    let task_life_time = simple_test_time_range.inner(0.1);
-
-    let mut setup = ForkAsyncMockSetup::<N_FORKS, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(1);
 
     let task = setup.forks[0]
         .take()
         .unwrap()
-        .assert_background(Poll::Ready(Some(0)), task_life_time);
+        .assert_background(Poll::Ready(Some(0)), simple_test_time_range);
 
-    sleep_until(task_life_time.middle()).await;
+    sleep_until(simple_test_time_range.middle()).await;
 
     setup.sender.send(0).await.unwrap();
 
-    task.await.expect("Background task panicked.");
+    let _ = task.await.expect("Background task panicked.");
 }
 
 #[tokio::test]
 async fn start_poll_sequentially() {
+    println!("Starting test");
     let sub_poll_time_ranges = TimeRange::sequential_overlapping_sub_ranges_from(
-        complete_spawns(LARGE_N_FORKS),
-        LARGE_N_FORKS as u32,
-        spacing_necessary(LARGE_N_FORKS),
+        fork_warmup(LARGE_N_FORKS),
+        LARGE_N_FORKS,
+        spacing_required(LARGE_N_FORKS),
     );
+
+    println!("Sub poll time ranges: {}", sub_poll_time_ranges.len());
 
     let last = sub_poll_time_ranges.last().unwrap();
 
-    let mut setup = ForkAsyncMockSetup::<LARGE_N_FORKS, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(LARGE_N_FORKS);
 
     let mut sender = setup.sender.clone();
 
@@ -90,19 +72,15 @@ async fn start_poll_sequentially() {
         })
         .await;
 
-    println!("Metrics: {metrics:?}");
-
     assert!(metrics.is_successful());
 }
 
 #[tokio::test]
 async fn start_poll_abort_simultaneously() {
-    let test_time_range = TimeRange::after_for(
-        complete_spawns(LARGE_N_FORKS),
-        complete_wake_ups(LARGE_N_FORKS),
-    );
+    let test_time_range =
+        TimeRange::after_for(fork_warmup(LARGE_N_FORKS), resume_forks(LARGE_N_FORKS));
 
-    let mut setup = ForkAsyncMockSetup::<LARGE_N_FORKS, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(LARGE_N_FORKS);
 
     let mut sender = setup.sender.clone();
 

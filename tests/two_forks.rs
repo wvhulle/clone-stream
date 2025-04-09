@@ -1,14 +1,12 @@
-mod mock;
-
 use std::task::Poll;
 
+use forked_stream::ForkAsyncMockSetup;
 use futures::{SinkExt, executor::block_on};
 use log::info;
-use mock::ForkAsyncMockSetup;
 
 #[test]
 fn nothing() {
-    let mut setup = ForkAsyncMockSetup::<2, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(2);
 
     assert_eq!(setup.poll_stream(0), Poll::Pending);
     assert_eq!(setup.poll_stream(1), Poll::Pending);
@@ -16,7 +14,7 @@ fn nothing() {
 
 #[test]
 fn one_pending_send_one() {
-    let mut setup = ForkAsyncMockSetup::<2, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(2);
 
     assert_eq!(setup.poll_stream(0), Poll::Pending);
 
@@ -30,7 +28,7 @@ fn one_pending_send_one() {
 
 #[test]
 fn both_pending_send_one() {
-    let mut setup = ForkAsyncMockSetup::<2, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(2);
 
     assert_eq!(setup.poll_stream(0), Poll::Pending);
     assert_eq!(setup.poll_stream(1), Poll::Pending);
@@ -44,7 +42,7 @@ fn both_pending_send_one() {
 
 #[test]
 fn both_pending_send_two_receive_one() {
-    let mut setup = ForkAsyncMockSetup::<2, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(2);
 
     assert_eq!(setup.poll_stream(0), Poll::Pending);
     assert_eq!(setup.poll_stream(1), Poll::Pending);
@@ -59,7 +57,7 @@ fn both_pending_send_two_receive_one() {
 }
 #[test]
 fn both_pending_send_two_receive_one_late() {
-    let mut setup = ForkAsyncMockSetup::<2, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(2);
 
     assert_eq!(setup.poll_stream(0), Poll::Pending);
     assert_eq!(setup.poll_stream(1), Poll::Pending);
@@ -75,7 +73,7 @@ fn both_pending_send_two_receive_one_late() {
 
 #[test]
 fn both_pending_send_two_receive_two_twice() {
-    let mut setup = ForkAsyncMockSetup::<2, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(2);
 
     assert_eq!(setup.poll_stream(0), Poll::Pending);
     assert_eq!(setup.poll_stream(1), Poll::Pending);

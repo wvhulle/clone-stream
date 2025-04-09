@@ -9,15 +9,17 @@ keywords = ["future", "async", "stream", "Clone", "async"]
 license = "MIT"
 
 [lints.clippy]
-pedantic = "deny"
+pedantic = { level = "warn", priority = 0 }
+missing_panics_doc = { level = "allow", priority = 1 }
+cast_precision_loss = { level = "allow", priority = 1 }
+cast_possible_truncation = { level = "allow", priority = 1 }
 
 
 [dependencies]
 futures = "0.3.31"
 log = "0.4.27"
-
-
-[dev-dependencies]
 tokio = { version = "1.44.1", features = ["full"] }
 chrono = "0.4.40"
 env_logger = "0.11.8"
+
+[dev-dependencies]

@@ -1,20 +1,18 @@
-mod mock;
-
 use std::task::Poll;
 
+use forked_stream::ForkAsyncMockSetup;
 use futures::{SinkExt, executor::block_on};
-use mock::ForkAsyncMockSetup;
 
 #[test]
 fn nothing() {
-    let mut setup = ForkAsyncMockSetup::<1, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(1);
 
     assert_eq!(setup.poll_one(), Poll::Pending);
 }
 
 #[test]
 fn send_one() {
-    let mut setup = ForkAsyncMockSetup::<1, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(1);
 
     assert_eq!(setup.poll_one(), Poll::Pending);
     block_on(async {
@@ -26,7 +24,7 @@ fn send_one() {
 
 #[test]
 fn send_one_back_to_pending() {
-    let mut setup = ForkAsyncMockSetup::<1, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(1);
 
     assert_eq!(setup.poll_one(), Poll::Pending);
     block_on(async {
@@ -40,7 +38,7 @@ fn send_one_back_to_pending() {
 
 #[test]
 fn send_two() {
-    let mut setup = ForkAsyncMockSetup::<1, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(1);
 
     assert_eq!(setup.poll_one(), Poll::Pending);
     block_on(async {
@@ -54,7 +52,7 @@ fn send_two() {
 
 #[test]
 fn send_two_back_to_pending() {
-    let mut setup = ForkAsyncMockSetup::<1, 1>::new();
+    let mut setup = ForkAsyncMockSetup::<1>::new(1);
 
     assert_eq!(setup.poll_one(), Poll::Pending);
     block_on(async {

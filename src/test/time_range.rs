@@ -85,17 +85,21 @@ impl TimeRange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics when `n` is less than 2.
     #[must_use]
     pub fn sequential_overlapping_sub_ranges_from(
         within: Duration,
-        n: u32,
+        n: usize,
         spacing: Duration,
     ) -> Vec<Self> {
+        assert!(n >= 2, "Cannot create sub ranges with less than 2 ranges");
         let now = Instant::now();
-        let end = now + within + spacing * n;
+        let end = now + within + spacing * (n as u32);
         (0..n)
             .map(|i| {
-                let start = now + within + spacing * i;
+                let start = now + within + spacing * (i as u32);
 
                 TimeRange { start, end }
             })
@@ -110,8 +114,12 @@ impl TimeRange {
         TimeRange { start, end }
     }
 
+    /// # Panics
+    ///
+    /// Panics when `start` is not before `end`.
     #[must_use]
     pub fn middle(&self) -> Instant {
+        assert!(self.start < self.end, "Start must be before end");
         let total_duration = self.end.duration_since(self.start);
         self.start + total_duration / 2
     }

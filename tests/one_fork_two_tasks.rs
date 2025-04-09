@@ -1,13 +1,11 @@
-mod mock;
-
 use std::task::Poll;
 
+use forked_stream::ForkAsyncMockSetup;
 use futures::{SinkExt, executor::block_on};
-use mock::ForkAsyncMockSetup;
 
 #[test]
 fn first_waker_unaffected() {
-    let mut setup = ForkAsyncMockSetup::<1, 2>::new();
+    let mut setup = ForkAsyncMockSetup::<2>::new(1);
 
     assert_eq!(setup.poll_stream_with_waker(0, 0), Poll::Pending);
 
@@ -19,7 +17,7 @@ fn first_waker_unaffected() {
 
 #[test]
 fn second_waker_also_consumed() {
-    let mut setup = ForkAsyncMockSetup::<1, 2>::new();
+    let mut setup = ForkAsyncMockSetup::<2>::new(1);
 
     assert_eq!(setup.poll_stream_with_waker(0, 0), Poll::Pending);
     assert_eq!(setup.poll_stream_with_waker(0, 1), Poll::Pending);
@@ -32,7 +30,7 @@ fn second_waker_also_consumed() {
 
 #[test]
 fn first_waker_also_consumed() {
-    let mut setup = ForkAsyncMockSetup::<1, 2>::new();
+    let mut setup = ForkAsyncMockSetup::<2>::new(1);
 
     assert_eq!(setup.poll_stream_with_waker(0, 0), Poll::Pending);
     assert_eq!(setup.poll_stream_with_waker(0, 1), Poll::Pending);

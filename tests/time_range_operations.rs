@@ -1,8 +1,6 @@
-mod mock;
-
 use std::time::Duration;
 
-use mock::TimeRange;
+use forked_stream::TimeRange;
 use tokio::time::Instant;
 
 #[test]
