@@ -66,9 +66,12 @@ where
                             .filter(|(other_fork, _)| fork_id != **other_fork)
                             .for_each(|(other_fork_id, other_fork)| {
                                 if let Some(waker) = &other_fork.pending_waker {
-                                     trace!("Pushing item from input stream on queue of other fork {other_fork_id} because fork {fork_id} was polled");
+                                    trace!(
+                                        "Pushing item from input stream on queue of other fork \
+                                         {other_fork_id} because fork {fork_id} was polled"
+                                    );
                                     other_fork.items.push_back(item.clone());
-                                     trace!("Waking up fork {other_fork_id} because it was polled");
+                                    trace!("Waking up fork {other_fork_id} because it was polled");
                                     waker.wake_by_ref();
                                 }
                             });
