@@ -5,7 +5,6 @@ use std::{
 };
 
 use futures::{Stream, task::Context};
-use log::trace;
 
 use super::ChannelState;
 

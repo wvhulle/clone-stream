@@ -21,9 +21,9 @@ fn m() {
 
     let send = pool
         .spawn_with_handle(async move {
-            sender.send('a').await;
+            sender.send('a').await.unwrap();
 
-            sender.send('b').await;
+            sender.send('b').await.unwrap();
         })
         .unwrap();
 
@@ -60,11 +60,11 @@ fn n() {
     let send = pool
         .spawn_with_handle(async move {
             println!("[Sender] Sending a");
-            sender.send('a').await;
+            sender.send('a').await.unwrap();
 
             println!("[Sender] Sent a");
             println!("[Sender] Sending b");
-            sender.send('b').await;
+            sender.send('b').await.unwrap();
             println!("[Sender] Sent b");
         })
         .unwrap();
@@ -105,9 +105,9 @@ fn o() {
 
     let send = pool
         .spawn_with_handle(async move {
-            sender.send('a').await;
+            sender.send('a').await.unwrap();
 
-            sender.send('b').await;
+            sender.send('b').await.unwrap();
         })
         .unwrap();
 

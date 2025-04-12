@@ -1,14 +1,16 @@
+use std::{thread::sleep, time::Duration};
+
 use forked_stream::{ForkStream, enable_debug_log};
 use futures::{
     FutureExt, SinkExt, StreamExt,
     executor::{ThreadPool, block_on},
     join,
+    stream::FuturesUnordered,
     task::SpawnExt,
 };
 
 #[test]
-fn p() {
-    enable_debug_log();
+fn two_forks() {
     let (mut sender, rx) = futures::channel::mpsc::unbounded();
 
     let mut fork_0 = rx.fork();
@@ -30,10 +32,9 @@ fn p() {
         .spawn_with_handle(async move {
             println!("Sender started sending");
             for i in 0..n {
-                println!("Sender sending {}", i);
-                sender.send(Some(i)).await;
+                sender.send(Some(i)).await.unwrap();
             }
-            sender.send(None).await;
+            sender.send(None).await.unwrap();
             println!("Sender finished sending");
         })
         .unwrap();
@@ -44,7 +45,6 @@ fn p() {
             let mut seen = Vec::new();
             fork_0
                 .for_each(|item| {
-                    println!("Fork 0 received {:?}", item);
                     seen.push(item);
                     futures::future::ready(())
                 })
@@ -62,7 +62,6 @@ fn p() {
             let mut seen = Vec::new();
             fork_1
                 .for_each(|item| {
-                    println!("Fork 1 received {:?}", item);
                     seen.push(item);
                     futures::future::ready(())
                 })
@@ -75,4 +74,50 @@ fn p() {
     block_on(async move {
         join!(send, receive_fork_0, receive_fork_1);
     });
+}
+
+#[test]
+fn many_forks() {
+    let m = 1000;
+    let n = 100;
+
+    let (mut sender, rx) = futures::channel::mpsc::unbounded();
+
+    let fork = rx.fork();
+
+    let mut forks = (0..m).map(|_| fork.clone()).collect::<Vec<_>>();
+
+    let mut expected = (0..n).map(Some).collect::<Vec<_>>();
+    expected.push(None);
+
+    let pool = ThreadPool::new().unwrap();
+
+    for fork in &mut forks {
+        assert!(fork.next().now_or_never().is_none());
+    }
+
+    let send = pool
+        .spawn_with_handle(async move {
+            for i in 0..n {
+                sleep(Duration::from_micros(200));
+                sender.send(Some(i)).await.unwrap();
+            }
+            sender.send(None).await.unwrap();
+        })
+        .unwrap();
+
+    let ((), collected) = block_on(async move {
+        let collect = (forks.into_iter().map(|fork| {
+            pool.spawn_with_handle(async move { fork.collect().await })
+                .unwrap()
+        }))
+        .collect::<FuturesUnordered<_>>()
+        .collect::<Vec<Vec<_>>>();
+
+        join!(send, collect)
+    });
+
+    for seen in collected {
+        assert_eq!(seen, expected);
+    }
 }

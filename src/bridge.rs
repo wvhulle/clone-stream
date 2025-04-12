@@ -15,6 +15,7 @@ pub enum TaskState {
     #[default]
     NonActive,
     Active(Waker),
+    Terminated,
 }
 
 impl TaskState {
@@ -63,15 +64,15 @@ where
         trace!("Clone {clone_id} is being polled on the bridge.");
         let clone = self.clones.get_mut(&clone_id).unwrap();
 
-        clone.suspended_task = TaskState::Active(clone_waker.clone());
-
         match clone.unseen_items.pop_front() {
             Some(item) => {
+                clone.suspended_task = TaskState::Active(clone_waker.clone());
                 trace!("Popping item for clone {clone_id} from queue");
                 Poll::Ready(Some(item))
             }
             None => {
                 if self.base_stream.is_terminated() {
+                    clone.suspended_task = TaskState::Terminated;
                     Poll::Ready(None)
                 } else {
                     match self
@@ -82,6 +83,7 @@ where
                             trace!(
                                 "No ready item from input stream available for clone {clone_id}"
                             );
+                            clone.suspended_task = TaskState::Active(clone_waker.clone());
                             Poll::Pending
                         }
                         Poll::Ready(item) => {
@@ -105,6 +107,7 @@ where
 
                                 Poll::Ready(Some(item))
                             } else {
+                                clone.suspended_task = TaskState::Terminated;
                                 trace!("Input stream is terminated");
                                 Poll::Ready(None)
                             }

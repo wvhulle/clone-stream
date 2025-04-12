@@ -44,6 +44,7 @@ where
 {
     pub sender: Sender<T>,
     pub fork_0: CloneStream<Receiver<T>>,
+    #[allow(dead_code)]
     pub fork_1: CloneStream<Receiver<T>>,
 }
 
