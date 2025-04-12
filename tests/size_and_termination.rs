@@ -1,11 +1,10 @@
 use std::future::ready;
 
-use forked_stream::{ForkStream, enable_debug_log};
+use forked_stream::ForkStream;
 use futures::{FutureExt, Stream, StreamExt, executor::block_on, stream::FusedStream};
 
 #[test]
 fn test_one_fork_terminated() {
-    enable_debug_log();
     let stream = ready(1).into_stream();
 
     let mut fork = stream.fork();
@@ -22,7 +21,6 @@ fn test_one_fork_terminated() {
 
 #[test]
 fn test_two_forks_terminated() {
-    enable_debug_log();
     let stream = ready(1).into_stream();
 
     let mut fork = stream.fork();

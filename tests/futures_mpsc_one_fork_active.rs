@@ -1,4 +1,4 @@
-use forked_stream::{ForkStream, enable_debug_log};
+use forked_stream::ForkStream;
 use futures::{
     FutureExt, SinkExt, StreamExt,
     executor::{ThreadPool, block_on},
@@ -7,8 +7,7 @@ use futures::{
 };
 
 #[test]
-fn l() {
-    enable_debug_log();
+fn one_listens_receives_two() {
     let (mut sender, rx) = futures::channel::mpsc::unbounded();
 
     let mut fork_0 = rx.fork();

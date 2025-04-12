@@ -1,6 +1,6 @@
 use futures::{FutureExt, SinkExt, StreamExt};
-mod spsc;
-use spsc::Setup;
+mod spsc_without_buffer;
+use spsc_without_buffer::Setup;
 
 #[test]
 fn h() {
