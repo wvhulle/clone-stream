@@ -1,6 +1,6 @@
 mod bridge;
 mod stream;
-mod test_helpers;
+pub mod test_helpers;
 
 use bridge::Bridge;
 use futures::Stream;

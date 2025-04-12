@@ -1,3 +1,5 @@
+use std::task::Poll;
+
 pub use forked_stream::TimeRange;
 use forked_stream::{
     TestSetup, fork_warmup, min_spacing_seq_polled_forks, time_per_fork_to_receive_cold,
@@ -22,11 +24,15 @@ async fn start_poll_sequentially() {
     let mut sender = setup.sender.clone();
 
     let metrics = setup
-        .poll_forks_background(|i| sub_poll_time_ranges[i], async move {
-            sleep_until(last.middle()).await;
+        .poll_forks_background(
+            |i| sub_poll_time_ranges[i],
+            async move {
+                sleep_until(last.middle()).await;
 
-            sender.send(0).await.unwrap();
-        })
+                sender.send(0).await.unwrap();
+            },
+            std::task::Poll::Ready(Some(0)),
+        )
         .await;
 
     assert!(metrics.success());
@@ -44,11 +50,15 @@ async fn start_poll_abort_simultaneously() {
     let mut sender = setup.sender.clone();
 
     let metrics = setup
-        .poll_forks_background(|_| test_time_range, async move {
-            sleep_until(test_time_range.middle()).await;
+        .poll_forks_background(
+            |_| test_time_range,
+            async move {
+                sleep_until(test_time_range.middle()).await;
 
-            sender.send(0).await.unwrap();
-        })
+                sender.send(0).await.unwrap();
+            },
+            Poll::Ready(Some(0)),
+        )
         .await;
 
     assert!(metrics.success());

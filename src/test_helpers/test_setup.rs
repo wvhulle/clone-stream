@@ -1,8 +1,10 @@
 use std::task::Poll;
 
 use futures::{
+    Stream,
     channel::mpsc::{UnboundedSender, unbounded},
     future::join_all,
+    stream::FusedStream,
 };
 
 use super::{ForkWithMockWakers, MockWaker, StreamNextPollError, TimeRange};
@@ -54,15 +56,30 @@ where
         self.forks[0].as_mut().unwrap().poll_now()
     }
 
+    pub fn terminated(&mut self) -> bool {
+        self.forks
+            .iter()
+            .all(|fork| fork.as_ref().unwrap().stream.is_terminated())
+    }
+
+    #[must_use]
+    pub fn size_hint(&self) -> (usize, Option<usize>) {
+        self.forks
+            .iter()
+            .map(|fork| fork.as_ref().unwrap().stream.size_hint())
+            .fold((0, None), |acc, hint| (acc.0 + hint.0, acc.1.or(hint.1)))
+    }
+
     pub async fn poll_forks_background(
         &mut self,
         poll_abort: impl Fn(usize) -> TimeRange,
         sender_action: impl Future,
+        expected: Poll<Option<usize>>,
     ) -> ForkAbortState {
         let wait_for_all = join_all(self.forks.iter_mut().enumerate().map(|(index, fork)| {
             fork.take()
                 .unwrap()
-                .move_to_background_poll_abort(Poll::Ready(Some(0)), poll_abort(index))
+                .move_to_background_poll_abort(expected, poll_abort(index))
         }));
 
         sender_action.await;

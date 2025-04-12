@@ -33,6 +33,7 @@ impl<const N_WAKERS: usize> ForkWithMockWakers<N_WAKERS> {
         self.stream.poll_next_unpin(&mut self.wakers[n].context())
     }
 
+    /// # Errors
     pub async fn poll_abort_assert(
         &mut self,
         expected_poll_at_deadline: Poll<Option<usize>>,
