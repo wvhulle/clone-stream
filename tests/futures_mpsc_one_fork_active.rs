@@ -20,9 +20,9 @@ fn l() {
 
     let send = pool
         .spawn_with_handle(async move {
-            sender.send('a').await;
+            sender.send('a').await.unwrap();
 
-            sender.send('b').await;
+            sender.send('b').await.unwrap();
         })
         .unwrap();
 
