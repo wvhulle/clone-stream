@@ -1,6 +1,5 @@
 // A stream that implements `Clone` and takes input from the `BaseStream`i
 use std::{
-    ops::{Deref, DerefMut},
     pin::Pin,
     sync::{Arc, RwLock},
     task::{Context, Poll},
@@ -8,30 +7,26 @@ use std::{
 
 use futures::{Stream, stream::FusedStream};
 
-use crate::{
-    Fork,
-    bridge::{Bridge, ForkRef},
-};
+use crate::bridge::{Bridge, ForkRef};
 
 pub struct CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    bridge: Fork<BaseStream>,
+    bridge: Arc<RwLock<Bridge<BaseStream>>>,
     pub id: usize,
 }
 
-impl<BaseStream> From<Fork<BaseStream>> for CloneStream<BaseStream>
+impl<BaseStream> From<Bridge<BaseStream>> for CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fn from(fork: Fork<BaseStream>) -> Self {
-        let mut bridge = fork.write().unwrap();
+    fn from(mut bridge: Bridge<BaseStream>) -> Self {
         bridge.forks.insert(0, ForkRef::default());
-        drop(bridge);
+
         Self {
             id: 0,
-            bridge: fork,
+            bridge: Arc::new(RwLock::new(bridge)),
         }
     }
 }
@@ -53,26 +48,6 @@ where
             bridge: self.bridge.clone(),
             id: min_available,
         }
-    }
-}
-
-impl<BaseStream> Deref for CloneStream<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    type Target = Arc<RwLock<Bridge<BaseStream>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.bridge
-    }
-}
-
-impl<BaseStream> DerefMut for CloneStream<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.bridge
     }
 }
 
@@ -103,7 +78,7 @@ where
     fn is_terminated(&self) -> bool {
         let bridge = self.bridge.read().unwrap();
 
-        bridge.is_terminated() && bridge.forks.get(&self.id).unwrap().items.is_empty()
+        bridge.base_stream.is_terminated() && bridge.forks.get(&self.id).unwrap().items.is_empty()
     }
 }
 

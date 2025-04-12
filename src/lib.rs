@@ -1,10 +1,8 @@
 mod bridge;
-mod fork;
 mod stream;
 mod test_helpers;
 
 use bridge::Bridge;
-pub use fork::Fork;
 use futures::Stream;
 pub use stream::CloneStream;
 pub use test_helpers::{
@@ -18,7 +16,7 @@ pub use test_helpers::{
 pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// Forks the stream into a new stream that can be cloned.
     fn fork(self) -> CloneStream<Self> {
-        CloneStream::from(Fork::from(Bridge::new(self)))
+        CloneStream::from(Bridge::new(self))
     }
 }
 
