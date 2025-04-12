@@ -1,6 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
-use forked_stream::{ForkStream, enable_debug_log};
+use forked_stream::ForkStream;
 use futures::{
     FutureExt, SinkExt, StreamExt,
     executor::{ThreadPool, block_on},
@@ -79,21 +79,21 @@ fn two_forks() {
 #[test]
 fn many_forks() {
     let m = 1000;
-    let n = 100;
+    let n = 1000;
 
-    let (mut sender, rx) = futures::channel::mpsc::unbounded();
+    let (mut sender, receiver) = futures::channel::mpsc::unbounded();
 
-    let fork = rx.fork();
+    let template_fork = receiver.fork();
 
-    let mut forks = (0..m).map(|_| fork.clone()).collect::<Vec<_>>();
+    let mut forks = (0..m).map(|_| template_fork.clone()).collect::<Vec<_>>();
 
     let mut expected = (0..n).map(Some).collect::<Vec<_>>();
     expected.push(None);
 
     let pool = ThreadPool::new().unwrap();
 
-    for fork in &mut forks {
-        assert!(fork.next().now_or_never().is_none());
+    for unactive_fork in &mut forks {
+        assert!(unactive_fork.next().now_or_never().is_none());
     }
 
     let send = pool
@@ -106,7 +106,7 @@ fn many_forks() {
         })
         .unwrap();
 
-    let ((), collected) = block_on(async move {
+    let ((), list_of_vec_of_seen_values) = block_on(async move {
         let collect = (forks.into_iter().map(|fork| {
             pool.spawn_with_handle(async move { fork.collect().await })
                 .unwrap()
@@ -117,7 +117,7 @@ fn many_forks() {
         join!(send, collect)
     });
 
-    for seen in collected {
+    for seen in list_of_vec_of_seen_values {
         assert_eq!(seen, expected);
     }
 }

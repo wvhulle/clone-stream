@@ -1,11 +1,11 @@
-mod spsc;
+mod spsc_without_buffer;
 
-use forked_stream::{ForkStream, enable_debug_log};
+use forked_stream::ForkStream;
 use futures::{FutureExt, SinkExt, StreamExt};
-use spsc::{Setup, channel};
+use spsc_without_buffer::{Setup, channel};
 
 #[test]
-fn i() {
+fn when_listener_no_pull_other_receive() {
     let Setup {
         mut sender,
         mut fork_0,
@@ -20,7 +20,7 @@ fn i() {
 }
 
 #[test]
-fn j() {
+fn after_one_receive_other_none() {
     let Setup {
         mut sender,
         mut fork_0,
@@ -52,7 +52,7 @@ fn g() {
 }
 
 #[test]
-fn c() {
+fn both_nothing() {
     let Setup {
         mut fork_0,
         mut fork_1,
@@ -65,8 +65,7 @@ fn c() {
 }
 
 #[test]
-fn active() {
-    enable_debug_log();
+fn active_at_right_moment() {
     let (mut tx, rx) = channel::<char>();
 
     let mut fork_0 = rx.fork();
@@ -87,7 +86,6 @@ fn active() {
 
     assert!(!fork_0.active());
 
-    // assert_eq!(fork_0.next().now_or_never(), None);
     log::info!("Sending b");
     assert_eq!(tx.send('b').now_or_never(), None);
 
@@ -106,7 +104,6 @@ fn active() {
 
 #[test]
 fn queued_items() {
-    enable_debug_log();
     let (mut tx, rx) = channel::<char>();
 
     let mut fork_0 = rx.fork();
