@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, VecDeque},
-    ops::{Deref, DerefMut},
     pin::Pin,
     task::{Context, Poll, Waker},
 };
@@ -81,24 +80,5 @@ where
                 }
             }
         }
-    }
-}
-
-impl<BaseStream> Deref for Bridge<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    type Target = Pin<Box<BaseStream>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.base_stream
-    }
-}
-impl<BaseStream> DerefMut for Bridge<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.base_stream
     }
 }
