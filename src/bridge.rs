@@ -8,9 +8,9 @@ use futures::{Stream, StreamExt};
 use log::trace;
 
 #[derive(Default)]
-pub struct ForkRef<Item> {
-    pub pending_waker: Option<Waker>,
-    pub items: VecDeque<Item>,
+pub struct UnseenByClone<Item> {
+    pub suspended_task: Option<Waker>,
+    pub unseen_items: VecDeque<Item>,
 }
 
 pub struct Bridge<BaseStream>
@@ -18,7 +18,7 @@ where
     BaseStream: Stream,
 {
     pub base_stream: Pin<Box<BaseStream>>,
-    pub forks: BTreeMap<usize, ForkRef<Option<BaseStream::Item>>>,
+    pub clones: BTreeMap<usize, UnseenByClone<Option<BaseStream::Item>>>,
 }
 
 impl<BaseStream> Bridge<BaseStream>
@@ -28,49 +28,51 @@ where
     pub fn new(base_stream: BaseStream) -> Self {
         Self {
             base_stream: Box::pin(base_stream),
-            forks: BTreeMap::default(),
+            clones: BTreeMap::default(),
         }
     }
 
     pub fn clear(&mut self) {
-        self.forks.clear();
+        self.clones.clear();
     }
 
-    pub fn poll(&mut self, fork_id: usize, fork_waker: &Waker) -> Poll<Option<BaseStream::Item>> {
-        trace!("Fork {fork_id} is being polled on the bridge.");
-        let fork = self.forks.get_mut(&fork_id).unwrap();
+    pub fn poll(&mut self, clone_id: usize, clone_waker: &Waker) -> Poll<Option<BaseStream::Item>> {
+        trace!("Clone {clone_id} is being polled on the bridge.");
+        let clone = self.clones.get_mut(&clone_id).unwrap();
 
-        match fork.items.pop_front() {
+        match clone.unseen_items.pop_front() {
             Some(item) => {
-                trace!("Popping item for fork {fork_id} from queue");
+                trace!("Popping item for clone {clone_id} from queue");
                 Poll::Ready(item)
             }
             None => {
                 match self
                     .base_stream
-                    .poll_next_unpin(&mut Context::from_waker(fork_waker))
+                    .poll_next_unpin(&mut Context::from_waker(clone_waker))
                 {
                     Poll::Pending => {
-                        trace!("No ready item from input stream available for fork {fork_id}");
-                        fork.pending_waker = Some(fork_waker.clone());
+                        trace!("No ready item from input stream available for clone {clone_id}");
+                        clone.suspended_task = Some(clone_waker.clone());
                         Poll::Pending
                     }
                     Poll::Ready(item) => {
-                        trace!("Item ready from input stream for fork {fork_id}");
+                        trace!("Item ready from input stream for clone {clone_id}");
 
-                        fork.pending_waker = None;
+                        clone.suspended_task = None;
 
-                        self.forks
+                        self.clones
                             .iter_mut()
-                            .filter(|(other_fork, _)| fork_id != **other_fork)
-                            .for_each(|(other_fork_id, other_fork)| {
-                                if let Some(waker) = &other_fork.pending_waker {
+                            .filter(|(other_clone, _)| clone_id != **other_clone)
+                            .for_each(|(other_clone_id, other_clone)| {
+                                if let Some(waker) = &other_clone.suspended_task {
                                     trace!(
-                                        "Pushing item from input stream on queue of other fork \
-                                         {other_fork_id} because fork {fork_id} was polled"
+                                        "Pushing item from input stream on queue of other clone \
+                                         {other_clone_id} because clone {clone_id} was polled"
                                     );
-                                    other_fork.items.push_back(item.clone());
-                                    trace!("Waking up fork {other_fork_id} because it was polled");
+                                    other_clone.unseen_items.push_back(item.clone());
+                                    trace!(
+                                        "Waking up clone {other_clone_id} because it was polled"
+                                    );
                                     waker.wake_by_ref();
                                 }
                             });

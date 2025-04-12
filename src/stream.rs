@@ -1,4 +1,3 @@
-// A stream that implements `Clone` and takes input from the `BaseStream`i
 use std::{
     pin::Pin,
     sync::{Arc, RwLock},
@@ -7,8 +6,10 @@ use std::{
 
 use futures::{Stream, stream::FusedStream};
 
-use crate::bridge::{Bridge, ForkRef};
+use crate::bridge::{Bridge, UnseenByClone};
 
+/// A stream that implements `Clone` and returns cloned items from a base
+/// stream.
 pub struct CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
@@ -22,7 +23,7 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn from(mut bridge: Bridge<BaseStream>) -> Self {
-        bridge.forks.insert(0, ForkRef::default());
+        bridge.clones.insert(0, UnseenByClone::default());
 
         Self {
             id: 0,
@@ -38,10 +39,12 @@ where
     fn clone(&self) -> Self {
         let mut bridge = self.bridge.write().unwrap();
         let min_available = (0..)
-            .filter(|n| !bridge.forks.contains_key(n))
+            .filter(|n| !bridge.clones.contains_key(n))
             .nth(0)
             .unwrap();
-        bridge.forks.insert(min_available, ForkRef::default());
+        bridge
+            .clones
+            .insert(min_available, UnseenByClone::default());
         drop(bridge);
 
         Self {
@@ -66,7 +69,7 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         let bridge = self.bridge.read().unwrap();
         let (lower, upper) = bridge.base_stream.size_hint();
-        let n_cached = bridge.forks.get(&self.id).unwrap().items.len();
+        let n_cached = bridge.clones.get(&self.id).unwrap().unseen_items.len();
         (lower + n_cached, upper.map(|u| u + n_cached))
     }
 }
@@ -77,8 +80,8 @@ where
 {
     fn is_terminated(&self) -> bool {
         let bridge = self.bridge.read().unwrap();
-
-        bridge.base_stream.is_terminated() && bridge.forks.get(&self.id).unwrap().items.is_empty()
+        bridge.base_stream.is_terminated()
+            && bridge.clones.get(&self.id).unwrap().unseen_items.is_empty()
     }
 }
 
@@ -88,6 +91,6 @@ where
 {
     fn drop(&mut self) {
         let mut bridge = self.bridge.write().unwrap();
-        bridge.forks.remove(&self.id);
+        bridge.clones.remove(&self.id);
     }
 }
