@@ -18,6 +18,24 @@ where
     pub id: usize,
 }
 
+impl<BaseStream> CloneStream<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    /// Returns the ID of the stream.
+    #[must_use]
+    pub fn active(&self) -> bool {
+        let bridge = self.bridge.read().unwrap();
+        bridge.clones.get(&self.id).unwrap().suspended_task.active()
+    }
+
+    #[must_use]
+    pub fn queued_items(&self) -> usize {
+        let bridge = self.bridge.read().unwrap();
+        bridge.clones.get(&self.id).unwrap().unseen_items.len()
+    }
+}
+
 impl<BaseStream> From<Bridge<BaseStream>> for CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
@@ -76,7 +94,7 @@ where
 
 impl<BaseStream> FusedStream for CloneStream<BaseStream>
 where
-    BaseStream: Stream<Item: Clone> + FusedStream,
+    BaseStream: Stream<Item: Clone>,
 {
     fn is_terminated(&self) -> bool {
         let bridge = self.bridge.read().unwrap();

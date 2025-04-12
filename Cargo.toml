@@ -16,7 +16,7 @@ cast_possible_truncation = { level = "allow", priority = 1 }
 
 
 [dependencies]
-futures = "0.3.31"
+futures = { version = "0.3.31", features = ["thread-pool"] }
 log = "0.4.27"
 tokio = { version = "1.44.1", features = ["full"] }
 chrono = "0.4.40"

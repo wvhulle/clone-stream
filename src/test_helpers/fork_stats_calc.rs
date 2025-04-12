@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{task::Poll, time::Duration};
 
 use futures::{SinkExt, StreamExt, channel::mpsc, future::try_join_all};
 use log::info;
@@ -61,13 +61,17 @@ pub async fn spacing_wide_enough(n_forks: usize, duration: Duration) -> bool {
     let mut sender = setup.sender.clone();
 
     let final_state = setup
-        .poll_forks_background(|i| sub_poll_time_ranges[i], async move {
-            info!("Waiting to send until the middle of the send phase");
-            sleep_until(last.middle()).await;
+        .poll_forks_background(
+            |i| sub_poll_time_ranges[i],
+            async move {
+                info!("Waiting to send until the middle of the send phase");
+                sleep_until(last.middle()).await;
 
-            info!("Sending item");
-            let _ = sender.send(0).await;
-        })
+                info!("Sending item");
+                let _ = sender.send(0).await;
+            },
+            Poll::Ready(Some(0)),
+        )
         .await;
 
     final_state.success()

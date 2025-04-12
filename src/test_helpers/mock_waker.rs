@@ -24,6 +24,7 @@ impl MockWaker {
         Self(unsafe { Waker::from_raw(raw_waker(raw_ptr)) })
     }
 
+    #[must_use]
     pub fn context(&self) -> Context<'_> {
         Context::from_waker(self)
     }
