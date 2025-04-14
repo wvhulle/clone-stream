@@ -22,7 +22,6 @@ impl<BaseStream> CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    /// Returns the ID of the stream.
     #[must_use]
     pub fn active(&self) -> bool {
         let bridge = self.bridge.read().unwrap();
