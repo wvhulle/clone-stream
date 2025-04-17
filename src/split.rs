@@ -7,8 +7,9 @@ use std::{
 use futures::{Stream, StreamExt, stream::Fuse};
 use log::trace;
 
-// #[derive(Default)]
+#[derive(Default)]
 pub enum CloneTaskState<Item> {
+    #[default]
     NonActive,
     Active(VecDeque<(Waker, VecDeque<Option<Item>>)>),
 }
@@ -29,27 +30,15 @@ impl<Item> CloneTaskState<Item> {
     }
 }
 
-pub struct UnseenByClone<Item> {
-    pub(crate) state: CloneTaskState<Item>,
-}
-
-impl<Item> Default for UnseenByClone<Item> {
-    fn default() -> Self {
-        Self {
-            state: CloneTaskState::NonActive,
-        }
-    }
-}
-
-pub(crate) struct Bridge<BaseStream>
+pub(crate) struct Split<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
     pub base_stream: Pin<Box<Fuse<BaseStream>>>,
-    pub clones: BTreeMap<usize, UnseenByClone<BaseStream::Item>>,
+    pub clones: BTreeMap<usize, CloneTaskState<BaseStream::Item>>,
 }
 
-impl<BaseStream> Bridge<BaseStream>
+impl<BaseStream> Split<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
@@ -65,7 +54,7 @@ where
             .iter_mut()
             .filter(|(id, _)| **id != current_clone_id)
             .for_each(|(other_clone_id, other_clone)| {
-                if let CloneTaskState::Active(wakers) = &mut other_clone.state {
+                if let CloneTaskState::Active(wakers) = other_clone {
                     trace!(
                         "Clone {current_clone_id} was polled. Its queue was empty. The input \
                          stream was polled. It yielded an item. Updating the queues of sibling \
@@ -84,10 +73,10 @@ where
         clone_id: usize,
         clone_waker: &Waker,
     ) -> Poll<Option<BaseStream::Item>> {
-        trace!("Clone {clone_id} is being polled on the bridge.");
-        let clone = self.clones.get_mut(&clone_id).unwrap();
+        trace!("Clone {clone_id} is being polled on the split.");
+        let state = self.clones.get_mut(&clone_id).unwrap();
 
-        match &mut clone.state {
+        match state {
             CloneTaskState::Active(wakers) => {
                 trace!("Clone {clone_id} is active already.");
                 if let Some((old_waker, queue)) = wakers
@@ -135,7 +124,7 @@ where
                     .poll_next_unpin(&mut Context::from_waker(clone_waker))
                 {
                     Poll::Pending => {
-                        clone.state = CloneTaskState::Active(VecDeque::from([(
+                        *state = CloneTaskState::Active(VecDeque::from([(
                             clone_waker.clone(),
                             VecDeque::new(),
                         )]));

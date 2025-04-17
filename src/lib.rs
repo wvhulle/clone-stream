@@ -1,9 +1,9 @@
-mod bridge;
 mod clone;
+mod split;
 
-use bridge::Bridge;
 pub use clone::CloneStream;
 use futures::Stream;
+use split::Split;
 
 impl<BaseStream> From<BaseStream> for CloneStream<BaseStream>
 where
@@ -11,7 +11,7 @@ where
 {
     /// Forks the stream into a new stream that can be cloned.
     fn from(base_stream: BaseStream) -> CloneStream<BaseStream> {
-        CloneStream::from(Bridge::new(base_stream))
+        CloneStream::from(Split::new(base_stream))
     }
 }
 
@@ -20,7 +20,7 @@ where
 pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// Forks the stream into a new stream that can be cloned.
     fn fork(self) -> CloneStream<Self> {
-        CloneStream::from(Bridge::new(self))
+        CloneStream::from(Split::new(self))
     }
 }
 
