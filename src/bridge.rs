@@ -79,8 +79,7 @@ where
             });
     }
 
-    #[allow(clippy::too_many_lines)]
-    pub(crate) fn poll(
+    pub(crate) fn update(
         &mut self,
         clone_id: usize,
         clone_waker: &Waker,

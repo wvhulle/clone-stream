@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use forked_stream::ForkStream;
+use clone_stream::CloneStream;
 
 mod barrier_future;
 
@@ -17,7 +17,7 @@ use log::trace;
 fn mass_send() {
     let (mut sender, rx) = futures::channel::mpsc::unbounded::<usize>();
 
-    let template_fork = rx.fork();
+    let template_clone: CloneStream<_> = rx.into();
     let pool = ThreadPool::builder().create().unwrap();
     let n_clones = 500;
 
@@ -32,7 +32,7 @@ fn mass_send() {
     let observer = PendingFutureObserver::new(wakers.clone());
     for i in 0..n_clones {
         let receive_fut =
-            BarrierFuture::new(template_fork.clone().collect::<Vec<_>>(), wakers.clone());
+            BarrierFuture::new(template_clone.clone().collect::<Vec<_>>(), wakers.clone());
         let expected = expected_received.clone();
         let handle = pool
             .spawn_with_handle(async move {
