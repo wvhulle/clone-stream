@@ -1,9 +1,9 @@
 mod clone;
-mod split;
+mod fork;
 
 pub use clone::CloneStream;
+use fork::Split;
 use futures::Stream;
-use split::Split;
 
 impl<BaseStream> From<BaseStream> for CloneStream<BaseStream>
 where
@@ -17,11 +17,11 @@ where
 
 /// A trait that turns a `Stream` with cloneable `Item`s into a cloneable stream
 /// that yields items of the same original item type.
-pub trait SplitStream: Stream<Item: Clone> + Sized {
+pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// Forks the stream into a new stream that can be cloned.
-    fn split(self) -> CloneStream<Self> {
+    fn fork(self) -> CloneStream<Self> {
         CloneStream::from(Split::new(self))
     }
 }
 
-impl<BaseStream> SplitStream for BaseStream where BaseStream: Stream<Item: Clone> {}
+impl<BaseStream> ForkStream for BaseStream where BaseStream: Stream<Item: Clone> {}
