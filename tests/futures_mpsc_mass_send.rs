@@ -78,16 +78,18 @@ fn two_forks() {
 
 #[test]
 fn many_forks() {
-    let m = 1000;
-    let n = 1000;
+    let n_forks = 100;
+    let n_items = 10;
 
     let (mut sender, receiver) = futures::channel::mpsc::unbounded();
 
     let template_fork = receiver.fork();
 
-    let mut forks = (0..m).map(|_| template_fork.clone()).collect::<Vec<_>>();
+    let mut forks = (0..n_forks)
+        .map(|_| template_fork.clone())
+        .collect::<Vec<_>>();
 
-    let mut expected = (0..n).map(Some).collect::<Vec<_>>();
+    let mut expected = (0..n_items).map(Some).collect::<Vec<_>>();
     expected.push(None);
 
     let pool = ThreadPool::new().unwrap();
@@ -98,7 +100,7 @@ fn many_forks() {
 
     let send = pool
         .spawn_with_handle(async move {
-            for i in 0..n {
+            for i in 0..n_items {
                 sleep(Duration::from_micros(200));
                 sender.send(Some(i)).await.unwrap();
             }

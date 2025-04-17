@@ -2,7 +2,8 @@ use forked_stream::ForkStream;
 use futures::{
     FutureExt, SinkExt, StreamExt,
     executor::{ThreadPool, block_on},
-    join,
+    future::join,
+    join, select,
     task::SpawnExt,
 };
 
@@ -30,7 +31,7 @@ fn two_listen_one_pulling() {
         .spawn_with_handle(async move {
             assert_eq!(fork_0.next().await, Some('a'));
             assert_eq!(fork_0.next().await, Some('b'));
-            assert_eq!(fork_0.next().now_or_never(), Some(None));
+            assert_eq!(fork_0.next().await, None);
         })
         .unwrap();
 
@@ -50,25 +51,51 @@ fn two_listen_two_pulling() {
     let mut fork_0 = rx.fork();
     let mut fork_1 = fork_0.clone();
 
-    let pool = ThreadPool::new().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    let pool = ThreadPool::builder()
+        .after_start(move |n| {
+            let _ = tx.send(n);
+        })
+        .create()
+        .unwrap();
 
     assert!(fork_0.next().now_or_never().is_none());
     assert!(fork_1.next().now_or_never().is_none());
 
     let send = pool
         .spawn_with_handle(async move {
+            let mut first_started = false;
+            let mut second_started = false;
+            loop {
+                let n = rx.recv().unwrap();
+                if n == 1 {
+                    first_started = true;
+                } else if n == 2 {
+                    second_started = true;
+                }
+
+                if first_started && second_started {
+                    break;
+                }
+            }
+
             sender.send('a').await.unwrap();
 
             sender.send('b').await.unwrap();
         })
         .unwrap();
 
-    let receive = pool
+    let receive_0 = pool
         .spawn_with_handle(async move {
             assert_eq!(fork_0.next().await, Some('a'));
             assert_eq!(fork_0.next().await, Some('b'));
             assert_eq!(fork_0.next().await, None);
+        })
+        .unwrap();
 
+    let receive_1 = pool
+        .spawn_with_handle(async move {
             assert_eq!(fork_1.next().await, Some('a'));
             assert_eq!(fork_1.next().await, Some('b'));
             assert_eq!(fork_1.next().await, None);
@@ -76,6 +103,6 @@ fn two_listen_two_pulling() {
         .unwrap();
 
     block_on(async move {
-        join!(send, receive);
+        join!(send, receive_0, receive_1);
     });
 }

@@ -4,51 +4,30 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use futures::{
-    Stream, StreamExt,
-    stream::{Fuse, FusedStream},
-};
-use log::{debug, trace};
+use futures::{Stream, StreamExt, stream::Fuse};
+use log::trace;
 
 #[derive(Default)]
-pub enum TaskState {
+pub enum TaskState<Item> {
     #[default]
     NonActive,
-    Active(VecDeque<Waker>),
+    Active(VecDeque<(Waker, VecDeque<Item>)>),
     Terminated,
 }
 
-impl TaskState {
+impl<Item> TaskState<Item> {
     pub fn active(&self) -> bool {
         matches!(self, TaskState::Active(_))
     }
-
-    fn ready(&mut self, waker: Waker) {
-        if let TaskState::Active(old_wakers) = self {
-            old_wakers.retain(|old_waker| !old_waker.will_wake(&waker));
-            old_wakers.push_back(waker);
-        }
-    }
-
-    fn not_ready(&mut self, waker: Waker) {
-        if let TaskState::Active(old_wakers) = self {
-            old_wakers.retain(|old_waker| !old_waker.will_wake(&waker));
-            old_wakers.push_back(waker);
-        } else {
-            *self = TaskState::Active(VecDeque::from([waker]));
-        }
-    }
 }
 pub struct UnseenByClone<Item> {
-    pub(crate) suspended_task: TaskState,
-    pub(crate) unseen_items: VecDeque<Item>,
+    pub(crate) state: TaskState<Item>,
 }
 
 impl<Item> Default for UnseenByClone<Item> {
     fn default() -> Self {
         Self {
-            suspended_task: TaskState::NonActive,
-            unseen_items: VecDeque::new(),
+            state: TaskState::NonActive,
         }
     }
 }
@@ -80,73 +59,155 @@ where
         trace!("Clone {clone_id} is being polled on the bridge.");
         let clone = self.clones.get_mut(&clone_id).unwrap();
 
-        match clone.unseen_items.pop_front() {
-            Some(item) => {
-                debug!("Popped an item from the queue of {clone_id}.");
-                clone.suspended_task.ready(clone_waker.clone());
-                Poll::Ready(Some(item))
-            }
-            None => {
-                if self.base_stream.is_terminated() {
-                    debug!(
-                        "The input stream is terminated and items are on the queue of clone \
-                         {clone_id}. Marking clone as terminated."
-                    );
-                    clone.suspended_task = TaskState::Terminated;
-                    Poll::Ready(None)
-                } else {
-                    match &self
-                        .base_stream
-                        .poll_next_unpin(&mut Context::from_waker(clone_waker))
-                    {
-                        Poll::Pending => {
-                            debug!(
-                                "No ready item from input stream available for clone {clone_id}"
-                            );
+        match &mut clone.state {
+            TaskState::Active(wakers) => {
+                trace!("Clone {clone_id} is active already.");
+                if let Some((old_waker, queue)) = wakers
+                    .iter_mut()
+                    .find(|(old_waker, _)| old_waker.will_wake(clone_waker))
+                {
+                    trace!("An old waker was registered for clone {clone_id}.");
 
-                            clone.suspended_task.not_ready(clone_waker.clone());
-                            Poll::Pending
-                        }
-                        poll @ Poll::Ready(item) => {
-                            clone.suspended_task.ready(clone_waker.clone());
-                            self.terminate_or_wake_all(item.clone(), clone_id);
-                            poll.clone()
-                        }
+                    old_waker.clone_from(clone_waker);
+                    match queue.pop_front() {
+                        Some(item) => Poll::Ready(Some(item)),
+                        None => self.query_input(clone_id, clone_waker),
                     }
+                } else {
+                    trace!("Clone {clone_id} was not polled before from this waker.");
+                    wakers.push_back((clone_waker.clone(), VecDeque::new()));
+                    self.query_input(clone_id, clone_waker)
                 }
+            }
+            TaskState::NonActive => {
+                trace!("Clone {clone_id} was not polled before.");
+                clone.state =
+                    TaskState::Active(VecDeque::from([(clone_waker.clone(), VecDeque::new())]));
+                self.query_input(clone_id, clone_waker)
+            }
+            TaskState::Terminated => {
+                trace!("Clone {clone_id} has been terminated.");
+                Poll::Ready(None)
             }
         }
     }
-
-    fn terminate_or_wake_all(&mut self, item: Option<BaseStream::Item>, clone_id: usize) {
+    #[allow(clippy::too_many_lines)]
+    fn query_input(&mut self, clone_id: usize, waker: &Waker) -> Poll<Option<BaseStream::Item>> {
         let clone = self.clones.get_mut(&clone_id).unwrap();
-        if let Some(item) = item {
-            trace!("While polling {clone_id}, the input stream yield a Some.");
 
-            self.clones
-                .iter_mut()
-                .filter(|(other_clone, _)| clone_id != **other_clone)
-                .for_each(|(other_clone_id, other_clone)| {
-                    if let TaskState::Active(old_wakers) = &mut other_clone.suspended_task {
-                        debug!(
-                            "The item will be added to the queue of another active fork \
-                             {other_clone_id} and it will be woken up."
-                        );
-                        other_clone.unseen_items.push_back(item.clone());
-                        old_wakers.iter().for_each(std::task::Waker::wake_by_ref);
-                    } else {
+        match self
+            .base_stream
+            .poll_next_unpin(&mut Context::from_waker(waker))
+        {
+            Poll::Pending => {
+                trace!(
+                    "Clone {clone_id} was polled and afterwards the input stream. The input \
+                     stream is pending. Updating the clone's state."
+                );
+                match &mut clone.state {
+                    TaskState::NonActive => {
                         trace!(
-                            "The other fork {other_clone_id} is not active and the item will not \
-                             be added to its queue."
+                            "Clone {clone_id} was not active. Initialising it with a waker and \
+                             empty item queue."
                         );
+                        clone.state =
+                            TaskState::Active(VecDeque::from([(waker.clone(), VecDeque::new())]));
+                        Poll::Pending
                     }
-                });
-        } else {
-            debug!(
-                "While polling clone {clone_id}, the input stream yielded a None. Marking this \
-                 fork as terminated."
-            );
-            clone.suspended_task = TaskState::Terminated;
+                    TaskState::Active(wakers) => {
+                        if let Some((old_waker, _)) = wakers
+                            .iter_mut()
+                            .find(|(old_waker, _)| old_waker.will_wake(waker))
+                        {
+                            trace!(
+                                "An old waker was registered for clone {clone_id}. Updating the \
+                                 old waker to the new waker."
+                            );
+                            old_waker.clone_from(waker);
+                        } else {
+                            trace!(
+                                "Clone {clone_id} was not polled before from this waker. \
+                                 Initialising an empty item queue."
+                            );
+                            wakers.push_back((waker.clone(), VecDeque::new()));
+                        }
+                        Poll::Pending
+                    }
+                    TaskState::Terminated => Poll::Ready(None),
+                }
+            }
+            Poll::Ready(item) => {
+                if let Some(item) = item {
+                    match &mut clone.state {
+                        TaskState::NonActive => {
+                            trace!(
+                                "Clone {clone_id} was not active. Initialising it with a waker \
+                                 and empty item queue."
+                            );
+                            clone.state = TaskState::Active(VecDeque::from([(
+                                waker.clone(),
+                                VecDeque::new(),
+                            )]));
+                        }
+                        TaskState::Active(wakers) => {
+                            trace!(
+                                "Clone {clone_id} was polled and afterwards the input stream. The \
+                                 input stream is ready now. Updating the clone's state."
+                            );
+                            if let Some((old_waker, _)) = wakers
+                                .iter_mut()
+                                .find(|(old_waker, _)| old_waker.will_wake(waker))
+                            {
+                                trace!(
+                                    "An old waker was registered for clone {clone_id}. Updating \
+                                     the old waker to the new waker."
+                                );
+                                old_waker.clone_from(waker);
+                            }
+
+                            wakers
+                                .iter_mut()
+                                .filter(|(old_waker, _)| !old_waker.will_wake(waker))
+                                .for_each(|(other_waker, queue)| {
+                                    trace!(
+                                        "Adding item to queue of another waker for clone \
+                                         {clone_id}."
+                                    );
+                                    queue.push_back(item.clone());
+                                    other_waker.wake_by_ref();
+                                });
+                        }
+                        TaskState::Terminated => {}
+                    }
+
+                    self.clones
+                        .iter_mut()
+                        .filter(|(id, _)| **id != clone_id)
+                        .for_each(|(other_clone_id, clone)| {
+                            if let TaskState::Active(wakers) = &mut clone.state {
+                                trace!(
+                                    "Clone {clone_id} was polled. Its queue was empty. The input \
+                                     stream was polled. It yielded an item. Updating the queues \
+                                     of sibling clone {other_clone_id}."
+                                );
+                                for (old_waker, queue) in wakers.iter_mut() {
+                                    queue.push_back(item.clone());
+                                    old_waker.wake_by_ref();
+                                }
+                            }
+                        });
+                    Poll::Ready(Some(item))
+                } else {
+                    match &mut clone.state {
+                        TaskState::NonActive => clone.state = TaskState::Terminated,
+                        TaskState::Active(items) => {
+                            items.retain(|(old_waker, _)| !old_waker.will_wake(waker));
+                        }
+                        TaskState::Terminated => (),
+                    }
+                    Poll::Ready(None)
+                }
+            }
         }
     }
 }

@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{Stream, stream::FusedStream};
+use futures::Stream;
 
 use crate::bridge::{Bridge, UnseenByClone};
 
@@ -16,23 +16,6 @@ where
 {
     bridge: Arc<RwLock<Bridge<BaseStream>>>,
     pub id: usize,
-}
-
-impl<BaseStream> CloneStream<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    #[must_use]
-    pub fn active(&self) -> bool {
-        let bridge = self.bridge.read().unwrap();
-        bridge.clones.get(&self.id).unwrap().suspended_task.active()
-    }
-
-    #[must_use]
-    pub fn queued_items(&self) -> usize {
-        let bridge = self.bridge.read().unwrap();
-        bridge.clones.get(&self.id).unwrap().unseen_items.len()
-    }
 }
 
 impl<BaseStream> From<Bridge<BaseStream>> for CloneStream<BaseStream>
@@ -81,24 +64,6 @@ where
         let waker = current_task.waker();
         let mut bridge = self.bridge.write().unwrap();
         bridge.poll(self.id, waker)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let bridge = self.bridge.read().unwrap();
-        let (lower, upper) = bridge.base_stream.size_hint();
-        let n_cached = bridge.clones.get(&self.id).unwrap().unseen_items.len();
-        (lower + n_cached, upper.map(|u| u + n_cached))
-    }
-}
-
-impl<BaseStream> FusedStream for CloneStream<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn is_terminated(&self) -> bool {
-        let bridge = self.bridge.read().unwrap();
-        bridge.base_stream.is_terminated()
-            && bridge.clones.get(&self.id).unwrap().unseen_items.is_empty()
     }
 }
 
