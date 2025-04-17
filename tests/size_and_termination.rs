@@ -1,13 +1,13 @@
 use std::future::ready;
 
-use clone_stream::SplitStream;
+use clone_stream::ForkStream;
 use futures::{FutureExt, Stream, StreamExt, executor::block_on, stream::FusedStream};
 
 #[test]
 fn test_one_clone_terminated() {
     let stream = ready(1).into_stream();
 
-    let mut clone = stream.split();
+    let mut clone = stream.fork();
 
     assert!(!clone.is_terminated());
 
@@ -23,7 +23,7 @@ fn test_one_clone_terminated() {
 fn test_two_clones_terminated() {
     let stream = ready(1).into_stream();
 
-    let clone = stream.split();
+    let clone = stream.fork();
 
     let mut clone = clone.clone();
 
@@ -47,7 +47,7 @@ fn test_two_clones_terminated() {
 fn test_one_clone_size() {
     let stream = ready(1).into_stream();
 
-    let mut clone = stream.split();
+    let mut clone = stream.fork();
 
     assert_eq!(clone.size_hint(), (1, Some(1)));
 
@@ -62,7 +62,7 @@ fn test_one_clone_size() {
 fn test_two_clone_size() {
     let stream = ready(1).into_stream();
 
-    let clone = stream.split();
+    let clone = stream.fork();
 
     let mut clone = clone.clone();
 

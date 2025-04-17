@@ -6,7 +6,7 @@ use std::{
 
 use futures::{Stream, stream::FusedStream};
 
-use crate::split::{CloneTaskState, Split};
+use crate::fork::{CloneTaskState, Split};
 
 /// A stream that implements `Clone` and returns cloned items from a base
 /// stream.
@@ -106,7 +106,7 @@ where
             .unwrap()
             .clones
             .values()
-            .any(super::split::CloneTaskState::active)
+            .any(super::fork::CloneTaskState::active)
     }
 
     #[must_use]
