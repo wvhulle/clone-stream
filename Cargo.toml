@@ -8,8 +8,6 @@ description = "Convert any Stream with cloneable items into a cloneable stream."
 keywords = ["future", "async", "stream", "clone", "async"]
 license = "MIT"
 
-[lints.rust]
-all = "allow"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = 0 }
