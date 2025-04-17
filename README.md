@@ -18,14 +18,14 @@ cargo add --git https://github.com/wvhulle/clone-stream
 
 ## Usage
 
-Import the trait `ForkStream` from this crate and call `fork` on your un-cloneable `Stream`:
+Import the trait `ForkStream` from this crate and call `split` on your un-cloneable `Stream`:
 
 ```rust
 use futures::{FutureExt, StreamExt, stream};
 use clone_stream::ForkStream;
 
 let uncloneable_stream = stream::iter(0..10);
-let cloneable_stream = uncloneable_stream.fork();
+let cloneable_stream = uncloneable_stream.split();
 let mut cloned_stream = cloneable_stream.clone();
 ```
 
