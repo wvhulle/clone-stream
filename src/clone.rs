@@ -91,7 +91,7 @@ where
     fn poll_next(self: Pin<&mut Self>, current_task: &mut Context) -> Poll<Option<Self::Item>> {
         let waker = current_task.waker();
         let mut bridge = self.bridge.write().unwrap();
-        bridge.poll(self.id, waker)
+        bridge.update(self.id, waker)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

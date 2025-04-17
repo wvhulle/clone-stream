@@ -1,4 +1,4 @@
-# Forkable streams
+# Rust library `clone-stream`
 
 This Rust library allows you to convert non-cloneable streams into cloneable streams. The only requirement is that the item type of the base-stream is cloneable. The streams are supposed to be Rust types implementing the `Stream` trait from the common `futures` crate.
 
@@ -7,7 +7,7 @@ This Rust library allows you to convert non-cloneable streams into cloneable str
 Make sure you have installed `rustup`, which installs `cargo`. Inside an existing `cargo` project:
 
 ```bash
-cargo add forked_stream futures
+cargo add clone-stream futures
 ```
 
 If you would like to install the latest `git` version instead of the release on [crates.io](crates.io):
@@ -22,7 +22,7 @@ Import the trait `ForkStream` from this crate and call `fork` on your un-cloneab
 
 ```rust
 use futures::{FutureExt, StreamExt, stream};
-use forked_stream::ForkStream;
+use clone_stream::ForkStream;
 
 let uncloneable_stream = stream::iter(0..10);
 let cloneable_stream = uncloneable_stream.fork();
