@@ -59,6 +59,26 @@ where
             clones: BTreeMap::default(),
         }
     }
+
+    fn notify_sibling_clones(&mut self, current_clone_id: usize, item: Option<&BaseStream::Item>) {
+        self.clones
+            .iter_mut()
+            .filter(|(id, _)| **id != current_clone_id)
+            .for_each(|(other_clone_id, other_clone)| {
+                if let CloneTaskState::Active(wakers) = &mut other_clone.state {
+                    trace!(
+                        "Clone {current_clone_id} was polled. Its queue was empty. The input \
+                         stream was polled. It yielded an item. Updating the queues of sibling \
+                         clone {other_clone_id}."
+                    );
+                    for (old_waker, queue) in wakers.iter_mut() {
+                        queue.push_back(item.cloned());
+                        old_waker.wake_by_ref();
+                    }
+                }
+            });
+    }
+
     #[allow(clippy::too_many_lines)]
     pub(crate) fn poll(
         &mut self,
@@ -80,48 +100,14 @@ where
                     old_waker.clone_from(clone_waker);
 
                     match queue.pop_front() {
-                        Some(item) => {
-                            match &item {
-                                Some(_) => {
-                                    trace!(
-                                        "The queue of clone {clone_id} was not empty. Returning a \
-                                         non-null
-                                         item from the queue."
-                                    );
-                                }
-                                None => {
-                                    trace!(
-                                        "The queue of clone {clone_id} was empty. Returning None."
-                                    );
-                                }
-                            }
-                            Poll::Ready(item)
-                        }
+                        Some(item) => Poll::Ready(item),
                         None => match self
                             .base_stream
                             .poll_next_unpin(&mut Context::from_waker(clone_waker))
                         {
                             Poll::Pending => Poll::Pending,
                             Poll::Ready(item) => {
-                                self.clones
-                                    .iter_mut()
-                                    .filter(|(id, _)| **id != clone_id)
-                                    .for_each(|(other_clone_id, other_clone)| {
-                                        if let CloneTaskState::Active(wakers) =
-                                            &mut other_clone.state
-                                        {
-                                            trace!(
-                                                "Clone {clone_id} was polled. Its queue was \
-                                                 empty. The input stream was polled. It yielded \
-                                                 an item. Updating the queues of sibling clone \
-                                                 {other_clone_id}."
-                                            );
-                                            for (old_waker, queue) in wakers.iter_mut() {
-                                                queue.push_back(item.clone());
-                                                old_waker.wake_by_ref();
-                                            }
-                                        }
-                                    });
+                                self.notify_sibling_clones(clone_id, item.as_ref());
                                 Poll::Ready(item)
                             }
                         },
@@ -137,23 +123,7 @@ where
                             Poll::Pending
                         }
                         Poll::Ready(item) => {
-                            self.clones
-                                .iter_mut()
-                                .filter(|(id, _)| **id != clone_id)
-                                .for_each(|(other_clone_id, other_clone)| {
-                                    if let CloneTaskState::Active(wakers) = &mut other_clone.state {
-                                        trace!(
-                                            "Clone {clone_id} was polled. Its queue was empty. \
-                                             The input stream was polled. It yielded an item. \
-                                             Updating the queues of sibling clone \
-                                             {other_clone_id}."
-                                        );
-                                        for (old_waker, queue) in wakers.iter_mut() {
-                                            queue.push_back(item.clone());
-                                            old_waker.wake_by_ref();
-                                        }
-                                    }
-                                });
+                            self.notify_sibling_clones(clone_id, item.as_ref());
                             Poll::Ready(item)
                         }
                     }
@@ -173,22 +143,7 @@ where
                         Poll::Pending
                     }
                     Poll::Ready(item) => {
-                        self.clones
-                            .iter_mut()
-                            .filter(|(id, _)| **id != clone_id)
-                            .for_each(|(other_clone_id, other_clone)| {
-                                if let CloneTaskState::Active(wakers) = &mut other_clone.state {
-                                    trace!(
-                                        "Clone {clone_id} was polled. Its queue was empty. The \
-                                         input stream was polled. It yielded an item. Updating \
-                                         the queues of sibling clone {other_clone_id}."
-                                    );
-                                    for (old_waker, queue) in wakers.iter_mut() {
-                                        queue.push_back(item.clone());
-                                        old_waker.wake_by_ref();
-                                    }
-                                }
-                            });
+                        self.notify_sibling_clones(clone_id, item.as_ref());
                         Poll::Ready(item)
                     }
                 }
