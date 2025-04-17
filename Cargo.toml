@@ -18,6 +18,7 @@ cast_precision_loss = { level = "allow", priority = 1 }
 cast_possible_truncation = { level = "allow", priority = 1 }
 
 [dependencies]
+env_logger = "0.11.8"
 futures = { version = "0.3.31", features = ["thread-pool"] }
 log = "0.4.27"
 
