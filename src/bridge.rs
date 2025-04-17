@@ -14,13 +14,29 @@ use log::{debug, trace};
 pub enum TaskState {
     #[default]
     NonActive,
-    Active(Waker),
+    Active(VecDeque<Waker>),
     Terminated,
 }
 
 impl TaskState {
     pub fn active(&self) -> bool {
         matches!(self, TaskState::Active(_))
+    }
+
+    fn ready(&mut self, waker: Waker) {
+        if let TaskState::Active(old_wakers) = self {
+            old_wakers.retain(|old_waker| !old_waker.will_wake(&waker));
+            old_wakers.push_back(waker);
+        }
+    }
+
+    fn not_ready(&mut self, waker: Waker) {
+        if let TaskState::Active(old_wakers) = self {
+            old_wakers.retain(|old_waker| !old_waker.will_wake(&waker));
+            old_wakers.push_back(waker);
+        } else {
+            *self = TaskState::Active(VecDeque::from([waker]));
+        }
     }
 }
 pub struct UnseenByClone<Item> {
@@ -67,7 +83,7 @@ where
         match clone.unseen_items.pop_front() {
             Some(item) => {
                 debug!("Popped an item from the queue of {clone_id}.");
-                clone.suspended_task = TaskState::Active(clone_waker.clone());
+                clone.suspended_task.ready(clone_waker.clone());
                 Poll::Ready(Some(item))
             }
             None => {
@@ -87,11 +103,13 @@ where
                             debug!(
                                 "No ready item from input stream available for clone {clone_id}"
                             );
-                            clone.suspended_task = TaskState::Active(clone_waker.clone());
+
+                            clone.suspended_task.not_ready(clone_waker.clone());
                             Poll::Pending
                         }
                         poll @ Poll::Ready(item) => {
-                            self.terminate_or_wake_all(item.clone(), clone_id, clone_waker);
+                            clone.suspended_task.ready(clone_waker.clone());
+                            self.terminate_or_wake_all(item.clone(), clone_id);
                             poll.clone()
                         }
                     }
@@ -100,28 +118,22 @@ where
         }
     }
 
-    fn terminate_or_wake_all(
-        &mut self,
-        item: Option<BaseStream::Item>,
-        clone_id: usize,
-        clone_waker: &Waker,
-    ) {
+    fn terminate_or_wake_all(&mut self, item: Option<BaseStream::Item>, clone_id: usize) {
         let clone = self.clones.get_mut(&clone_id).unwrap();
         if let Some(item) = item {
             trace!("While polling {clone_id}, the input stream yield a Some.");
-            clone.suspended_task = TaskState::Active(clone_waker.clone());
 
             self.clones
                 .iter_mut()
                 .filter(|(other_clone, _)| clone_id != **other_clone)
                 .for_each(|(other_clone_id, other_clone)| {
-                    if let TaskState::Active(waker) = &other_clone.suspended_task {
+                    if let TaskState::Active(old_wakers) = &mut other_clone.suspended_task {
                         debug!(
                             "The item will be added to the queue of another active fork \
                              {other_clone_id} and it will be woken up."
                         );
                         other_clone.unseen_items.push_back(item.clone());
-                        waker.wake_by_ref();
+                        old_wakers.iter().for_each(std::task::Waker::wake_by_ref);
                     } else {
                         trace!(
                             "The other fork {other_clone_id} is not active and the item will not \
