@@ -13,7 +13,7 @@ cargo add clone-stream futures
 If you would like to install the latest `git` version instead of the release on [crates.io](crates.io):
 
 ```bash
-cargo add --git https://github.com/wvhulle/forked_stream
+cargo add --git https://github.com/wvhulle/clone-stream
 ```
 
 ## Usage
@@ -30,17 +30,9 @@ let mut cloned_stream = cloneable_stream.clone();
 ```
 
 
-## Contributing
 
-You can run the tests with:
+## How does it work?
 
-```bash
-cargo test
-```
+This small project was an exercise for me making streams implement `Clone` without spawning tasks. 
 
-
-## Author remarks
-
-This small project was an exercise for me making streams forkable without spawning tasks. This is my first time storing and managing `Waker` objects. Sorry for any mistakes.
-
-There are a few alternative solutions on `crates.io`.
+See [my blog](willemvanhulle.tech) for more technical information.

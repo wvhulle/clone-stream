@@ -6,7 +6,7 @@ use std::{
 
 use futures::{Stream, stream::FusedStream};
 
-use crate::bridge::{Bridge, UnseenByClone};
+use crate::split::{CloneTaskState, Split};
 
 /// A stream that implements `Clone` and returns cloned items from a base
 /// stream.
@@ -14,48 +14,20 @@ pub struct CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    bridge: Arc<RwLock<Bridge<BaseStream>>>,
+    split: Arc<RwLock<Split<BaseStream>>>,
     pub id: usize,
 }
 
-impl<BaseStream> CloneStream<BaseStream>
+impl<BaseStream> From<Split<BaseStream>> for CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    /// Creates a new `CloneStream` from a `Bridge`.
-    #[must_use]
-    pub fn active(&self) -> bool {
-        self.bridge
-            .read()
-            .unwrap()
-            .clones
-            .values()
-            .any(|state| state.state.active())
-    }
-
-    #[must_use]
-    pub fn queued_items(&self) -> usize {
-        self.bridge
-            .read()
-            .unwrap()
-            .clones
-            .get(&self.id)
-            .unwrap()
-            .state
-            .max_size()
-    }
-}
-
-impl<BaseStream> From<Bridge<BaseStream>> for CloneStream<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fn from(mut bridge: Bridge<BaseStream>) -> Self {
-        bridge.clones.insert(0, UnseenByClone::default());
+    fn from(mut split: Split<BaseStream>) -> Self {
+        split.clones.insert(0, CloneTaskState::default());
 
         Self {
             id: 0,
-            bridge: Arc::new(RwLock::new(bridge)),
+            split: Arc::new(RwLock::new(split)),
         }
     }
 }
@@ -65,18 +37,18 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn clone(&self) -> Self {
-        let mut bridge = self.bridge.write().unwrap();
+        let mut split = self.split.write().unwrap();
         let min_available = (0..)
-            .filter(|n| !bridge.clones.contains_key(n))
+            .filter(|n| !split.clones.contains_key(n))
             .nth(0)
             .unwrap();
-        bridge
+        split
             .clones
-            .insert(min_available, UnseenByClone::default());
-        drop(bridge);
+            .insert(min_available, CloneTaskState::default());
+        drop(split);
 
         Self {
-            bridge: self.bridge.clone(),
+            split: self.split.clone(),
             id: min_available,
         }
     }
@@ -90,14 +62,14 @@ where
 
     fn poll_next(self: Pin<&mut Self>, current_task: &mut Context) -> Poll<Option<Self::Item>> {
         let waker = current_task.waker();
-        let mut bridge = self.bridge.write().unwrap();
-        bridge.update(self.id, waker)
+        let mut split = self.split.write().unwrap();
+        split.update(self.id, waker)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let bridge = self.bridge.read().unwrap();
-        let (lower, upper) = bridge.base_stream.size_hint();
-        let n_cached = bridge.clones.get(&self.id).unwrap().state.max_size();
+        let split = self.split.read().unwrap();
+        let (lower, upper) = split.base_stream.size_hint();
+        let n_cached = split.clones.get(&self.id).unwrap().max_size();
         (lower + n_cached, upper.map(|u| u + n_cached))
     }
 }
@@ -107,10 +79,9 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn is_terminated(&self) -> bool {
-        let bridge = self.bridge.read().unwrap();
+        let split = self.split.read().unwrap();
 
-        bridge.base_stream.is_terminated()
-            && bridge.clones.get(&self.id).unwrap().state.max_size() == 0
+        split.base_stream.is_terminated() && split.clones.get(&self.id).unwrap().max_size() == 0
     }
 }
 
@@ -119,7 +90,33 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn drop(&mut self) {
-        let mut bridge = self.bridge.write().unwrap();
-        bridge.clones.remove(&self.id);
+        let mut split = self.split.write().unwrap();
+        split.clones.remove(&self.id);
+    }
+}
+
+impl<BaseStream> CloneStream<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    #[must_use]
+    pub fn active(&self) -> bool {
+        self.split
+            .read()
+            .unwrap()
+            .clones
+            .values()
+            .any(super::split::CloneTaskState::active)
+    }
+
+    #[must_use]
+    pub fn queued_items(&self) -> usize {
+        self.split
+            .read()
+            .unwrap()
+            .clones
+            .get(&self.id)
+            .unwrap()
+            .max_size()
     }
 }
