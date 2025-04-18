@@ -69,7 +69,7 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         let split = self.split.read().unwrap();
         let (lower, upper) = split.base_stream.size_hint();
-        let n_cached = split.clones.get(&self.id).unwrap().max_size();
+        let n_cached = split.clones.get(&self.id).unwrap().n_queued_items();
         (lower + n_cached, upper.map(|u| u + n_cached))
     }
 }
@@ -81,7 +81,8 @@ where
     fn is_terminated(&self) -> bool {
         let split = self.split.read().unwrap();
 
-        split.base_stream.is_terminated() && split.clones.get(&self.id).unwrap().max_size() == 0
+        split.base_stream.is_terminated()
+            && split.clones.get(&self.id).unwrap().n_queued_items() == 0
     }
 }
 
@@ -105,18 +106,19 @@ where
             .read()
             .unwrap()
             .clones
-            .values()
-            .any(super::fork::CloneTaskState::active)
+            .get(&self.id)
+            .unwrap()
+            .active()
     }
 
     #[must_use]
-    pub fn queued_items(&self) -> usize {
+    pub fn n_queued_items(&self) -> usize {
         self.split
             .read()
             .unwrap()
             .clones
             .get(&self.id)
             .unwrap()
-            .max_size()
+            .n_queued_items()
     }
 }

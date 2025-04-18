@@ -11,21 +11,24 @@ use log::trace;
 pub enum CloneTaskState<Item> {
     #[default]
     NonActive,
-    Active(VecDeque<(Waker, VecDeque<Option<Item>>)>),
+    Active {
+        waker: Waker,
+        queue: VecDeque<Option<Item>>,
+    },
 }
 
 impl<Item> CloneTaskState<Item> {
-    pub fn max_size(&self) -> usize {
+    pub fn n_queued_items(&self) -> usize {
         match self {
             CloneTaskState::NonActive => 0,
-            CloneTaskState::Active(wakers) => wakers.len(),
+            CloneTaskState::Active { queue, .. } => queue.len(),
         }
     }
 
     pub fn active(&self) -> bool {
         match self {
             CloneTaskState::NonActive => false,
-            CloneTaskState::Active(_) => true,
+            CloneTaskState::Active { .. } => true,
         }
     }
 }
@@ -54,16 +57,15 @@ where
             .iter_mut()
             .filter(|(id, _)| **id != current_clone_id)
             .for_each(|(other_clone_id, other_clone)| {
-                if let CloneTaskState::Active(wakers) = other_clone {
+                if let CloneTaskState::Active { waker, queue } = other_clone {
                     trace!(
                         "Clone {current_clone_id} was polled. Its queue was empty. The input \
                          stream was polled. It yielded an item. Updating the queues of sibling \
                          clone {other_clone_id}."
                     );
-                    for (old_waker, queue) in wakers.iter_mut() {
-                        queue.push_back(item.cloned());
-                        old_waker.wake_by_ref();
-                    }
+
+                    queue.push_back(item.cloned());
+                    waker.wake_by_ref();
                 }
             });
     }
@@ -77,15 +79,12 @@ where
         let state = self.clones.get_mut(&clone_id).unwrap();
 
         match state {
-            CloneTaskState::Active(wakers) => {
+            CloneTaskState::Active { waker, queue } => {
                 trace!("Clone {clone_id} is active already.");
-                if let Some((old_waker, queue)) = wakers
-                    .iter_mut()
-                    .find(|(old_waker, _)| old_waker.will_wake(clone_waker))
-                {
+                if waker.will_wake(clone_waker) {
                     trace!("An old waker was registered for clone {clone_id}.");
 
-                    old_waker.clone_from(clone_waker);
+                    waker.clone_from(clone_waker);
 
                     match queue.pop_front() {
                         Some(item) => Poll::Ready(item),
@@ -107,7 +106,8 @@ where
                         .poll_next_unpin(&mut Context::from_waker(clone_waker))
                     {
                         Poll::Pending => {
-                            wakers.push_back((clone_waker.clone(), VecDeque::new()));
+                            waker.clone_from(clone_waker);
+                            queue.clear();
                             Poll::Pending
                         }
                         Poll::Ready(item) => {
@@ -124,10 +124,10 @@ where
                     .poll_next_unpin(&mut Context::from_waker(clone_waker))
                 {
                     Poll::Pending => {
-                        *state = CloneTaskState::Active(VecDeque::from([(
-                            clone_waker.clone(),
-                            VecDeque::new(),
-                        )]));
+                        *state = CloneTaskState::Active {
+                            waker: clone_waker.clone(),
+                            queue: VecDeque::new(),
+                        };
                         Poll::Pending
                     }
                     Poll::Ready(item) => {
