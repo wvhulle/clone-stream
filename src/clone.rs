@@ -6,7 +6,7 @@ use std::{
 
 use futures::{Stream, stream::FusedStream};
 
-use crate::fork::{CloneTaskState, Fork};
+use crate::fork::Fork;
 
 /// A stream that implements `Clone` and returns cloned items from a base
 /// stream.
@@ -23,10 +23,10 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn from(mut split: Fork<BaseStream>) -> Self {
-        split.clones.insert(0, CloneTaskState::default());
+        let id = split.register();
 
         Self {
-            id: 0,
+            id,
             split: Arc::new(RwLock::new(split)),
         }
     }
@@ -38,13 +38,7 @@ where
 {
     fn clone(&self) -> Self {
         let mut split = self.split.write().unwrap();
-        let min_available = (0..)
-            .filter(|n| !split.clones.contains_key(n))
-            .nth(0)
-            .unwrap();
-        split
-            .clones
-            .insert(min_available, CloneTaskState::default());
+        let min_available = split.register();
         drop(split);
 
         Self {
@@ -63,12 +57,12 @@ where
     fn poll_next(self: Pin<&mut Self>, current_task: &mut Context) -> Poll<Option<Self::Item>> {
         let waker = current_task.waker();
         let mut split = self.split.write().unwrap();
-        split.update(self.id, waker)
+        split.poll_clone(self.id, waker)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let split = self.split.read().unwrap();
-        let (lower, upper) = split.base_stream.size_hint();
+        let (lower, upper) = split.size_hint();
         let n_cached = split.n_queued_items(self.id);
         (lower + n_cached, upper.map(|u| u + n_cached))
     }
@@ -76,12 +70,12 @@ where
 
 impl<BaseStream> FusedStream for CloneStream<BaseStream>
 where
-    BaseStream: Stream<Item: Clone>,
+    BaseStream: FusedStream<Item: Clone>,
 {
     fn is_terminated(&self) -> bool {
         let split = self.split.read().unwrap();
 
-        split.base_stream.is_terminated() && split.n_queued_items(self.id) == 0
+        split.is_terminated() && split.n_queued_items(self.id) == 0
     }
 }
 
@@ -91,7 +85,7 @@ where
 {
     fn drop(&mut self) {
         let mut split = self.split.write().unwrap();
-        split.clones.remove(&self.id);
+        split.unregister(self.id);
     }
 }
 
@@ -101,13 +95,7 @@ where
 {
     #[must_use]
     pub fn polled_once(&self) -> bool {
-        self.split
-            .read()
-            .unwrap()
-            .clones
-            .get(&self.id)
-            .unwrap()
-            .polled_once()
+        self.split.read().unwrap().polled_once(self.id)
     }
 
     #[must_use]
