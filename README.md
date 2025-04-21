@@ -35,4 +35,4 @@ let mut cloned_stream = cloneable_stream.clone();
 
 This small project was an exercise for me making streams implement `Clone` without spawning tasks. 
 
-See [my blog](willemvanhulle.tech) for more technical information.
+See the posts about functional async combinators on [my blog](https://willemvanhulle.tech/blog) for more technical information.
