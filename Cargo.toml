@@ -10,9 +10,9 @@ license = "MIT"
 
 
 [lints.clippy]
+cast_possible_truncation = { level = "allow", priority = 1 }
 pedantic = { level = "warn", priority = 0 }
 missing_panics_doc = { level = "allow", priority = 1 }
-
 [dependencies]
 
 futures = { version = "0.3.31", features = ["thread-pool"] }
@@ -20,5 +20,6 @@ log = "0.4.27"
 
 [dev-dependencies]
 env_logger = "0.11.8"
+test-log = "0.2.17"
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-stream = "0.1.17"

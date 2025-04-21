@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::BTreeMap,
     pin::Pin,
     task::{Context, Poll, Waker},
 };
@@ -27,8 +27,8 @@ impl CloneTaskState {
             CloneTaskState::Woken {
                 last_seen: remaining,
                 ..
-            } => remaining.unwrap_or_default(),
-            CloneTaskState::Sleeping {
+            }
+            | CloneTaskState::Sleeping {
                 last_seen_queued_item: remaining,
                 ..
             } => remaining.unwrap_or_default(),
@@ -38,8 +38,7 @@ impl CloneTaskState {
     pub fn active(&self) -> bool {
         match self {
             CloneTaskState::Unpolled => false,
-            CloneTaskState::Woken { .. } => true,
-            CloneTaskState::Sleeping { .. } => true,
+            CloneTaskState::Woken { .. } | CloneTaskState::Sleeping { .. } => true,
         }
     }
 }
@@ -88,13 +87,13 @@ where
                         || last_seen_queued_item.is_some_and(|last| item_index > last)
                 }
                 CloneTaskState::Sleeping {
-                    waker,
                     last_seen_queued_item,
+                    ..
                 } => {
                     last_seen_queued_item.is_none()
                         || last_seen_queued_item.is_some_and(|last| item_index > last)
                 }
-                _ => false,
+                CloneTaskState::Unpolled => false,
             })
             .count()
             == 0
@@ -158,10 +157,11 @@ where
         }
     }
 
-    pub fn is_newest(&self, index: usize) -> bool {
+    fn is_newest(&self, index: usize) -> bool {
         self.queue.is_empty() || self.queue.keys().min().copied().unwrap() >= index
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn update(
         &mut self,
         clone_id: usize,
