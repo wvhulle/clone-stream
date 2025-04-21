@@ -35,7 +35,7 @@ impl CloneTaskState {
         }
     }
 
-    pub fn active(&self) -> bool {
+    pub fn polled_once(&self) -> bool {
         match self {
             CloneTaskState::Unpolled => false,
             CloneTaskState::Woken { .. } | CloneTaskState::Sleeping { .. } => true,

@@ -108,7 +108,7 @@ where
             .clones
             .get(&self.id)
             .unwrap()
-            .active()
+            .polled_once()
     }
 
     #[must_use]
