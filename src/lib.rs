@@ -2,7 +2,7 @@ mod clone;
 mod fork;
 
 pub use clone::CloneStream;
-use fork::Split;
+use fork::Fork;
 use futures::Stream;
 
 impl<BaseStream> From<BaseStream> for CloneStream<BaseStream>
@@ -11,7 +11,7 @@ where
 {
     /// Forks the stream into a new stream that can be cloned.
     fn from(base_stream: BaseStream) -> CloneStream<BaseStream> {
-        CloneStream::from(Split::new(base_stream))
+        CloneStream::from(Fork::new(base_stream))
     }
 }
 
@@ -20,7 +20,7 @@ where
 pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// Forks the stream into a new stream that can be cloned.
     fn fork(self) -> CloneStream<Self> {
-        CloneStream::from(Split::new(self))
+        CloneStream::from(Fork::new(self))
     }
 }
 

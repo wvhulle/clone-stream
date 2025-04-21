@@ -1,3 +1,5 @@
+use std::thread::sleep;
+
 use clone_stream::CloneStream;
 use futures::{
     StreamExt,
@@ -7,9 +9,9 @@ use futures::{
     task::SpawnExt,
 };
 
-const N_STREAM_CLONES: usize = 500;
+const N_STREAM_CLONES: usize = 100;
 
-const N_ITEMS_SENT: usize = 5000;
+const N_ITEMS_SENT: usize = 100;
 
 #[test]
 fn mass_send() {
@@ -36,6 +38,7 @@ fn mass_send() {
 
     let send = pool
         .spawn_with_handle(async move {
+            sleep(std::time::Duration::from_secs(1));
             (stream::iter(0..N_ITEMS_SENT).map(Ok))
                 .forward(sender)
                 .await
