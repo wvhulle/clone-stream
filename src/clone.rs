@@ -6,7 +6,7 @@ use std::{
 
 use futures::{Stream, stream::FusedStream};
 
-use crate::fork::{CloneTaskState, Split};
+use crate::fork::{CloneTaskState, Fork};
 
 /// A stream that implements `Clone` and returns cloned items from a base
 /// stream.
@@ -14,15 +14,15 @@ pub struct CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    split: Arc<RwLock<Split<BaseStream>>>,
+    split: Arc<RwLock<Fork<BaseStream>>>,
     pub id: usize,
 }
 
-impl<BaseStream> From<Split<BaseStream>> for CloneStream<BaseStream>
+impl<BaseStream> From<Fork<BaseStream>> for CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fn from(mut split: Split<BaseStream>) -> Self {
+    fn from(mut split: Fork<BaseStream>) -> Self {
         split.clones.insert(0, CloneTaskState::default());
 
         Self {
