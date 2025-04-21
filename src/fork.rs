@@ -21,20 +21,6 @@ pub enum CloneTaskState {
 }
 
 impl CloneTaskState {
-    pub fn n_queued_items(&self) -> usize {
-        match self {
-            CloneTaskState::Unpolled => 0,
-            CloneTaskState::Woken {
-                last_seen: remaining,
-                ..
-            }
-            | CloneTaskState::Sleeping {
-                last_seen_queued_item: remaining,
-                ..
-            } => remaining.unwrap_or_default(),
-        }
-    }
-
     pub fn polled_once(&self) -> bool {
         match self {
             CloneTaskState::Unpolled => false,
@@ -325,5 +311,23 @@ where
 
         self.clones.insert(clone_id, state);
         poll
+    }
+
+    pub(crate) fn n_queued_items(&self, clone_id: usize) -> usize {
+        let state = self.clones.get(&clone_id).unwrap();
+
+        match state {
+            CloneTaskState::Sleeping {
+                last_seen_queued_item,
+                ..
+            }
+            | CloneTaskState::Woken {
+                last_seen: last_seen_queued_item,
+            } => match last_seen_queued_item {
+                Some(last_seen) => self.queue.range((*last_seen + 1)..).count(),
+                None => self.queue.len(),
+            },
+            CloneTaskState::Unpolled => 0,
+        }
     }
 }
