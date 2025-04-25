@@ -1,6 +1,6 @@
 use core::ops::Deref;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     pin::Pin,
     task::{Poll, Waker},
 };
@@ -8,7 +8,7 @@ use std::{
 use futures::Stream;
 use log::trace;
 
-pub struct SiblingClone {
+pub(crate) struct SiblingClone {
     pub(crate) id: usize,
     pub(crate) last_seen: Option<usize>,
     pub(crate) waker: Option<Waker>,
@@ -29,7 +29,7 @@ where
 {
     pub(crate) base_stream: Pin<Box<BaseStream>>,
     pub(crate) queue: BTreeMap<usize, Option<BaseStream::Item>>,
-    pub(crate) clones: BTreeMap<usize, SiblingClone>,
+    pub(crate) clones: HashMap<usize, SiblingClone>,
     pub(crate) next_queue_index: usize,
 }
 
@@ -40,7 +40,7 @@ where
     pub(crate) fn new(base_stream: BaseStream) -> Self {
         Self {
             base_stream: Box::pin(base_stream),
-            clones: BTreeMap::default(),
+            clones: HashMap::default(),
             queue: BTreeMap::new(),
             next_queue_index: 0,
         }
