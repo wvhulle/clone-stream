@@ -8,35 +8,19 @@ use std::{
 use futures::{Stream, StreamExt};
 use log::trace;
 
-#[derive(Default)]
-enum CloneTaskState {
-    #[default]
-    Unpolled,
-    Woken {
-        last_seen: Option<usize>,
-    },
-    Sleeping {
-        waker: Waker,
-        last_seen: Option<usize>,
-    },
+pub struct SiblingClone {
+    pub(crate) id: usize,
+    last_seen: Option<usize>,
+    waker: Option<Waker>,
+    pub(crate) state: CloneState,
 }
 
-impl CloneTaskState {
-    pub(crate) fn polled_once(&self) -> bool {
-        match self {
-            CloneTaskState::Unpolled => false,
-            CloneTaskState::Woken { .. } | CloneTaskState::Sleeping { .. } => true,
-        }
-    }
-
-    pub(crate) fn last_seen(&self) -> Option<usize> {
-        match self {
-            CloneTaskState::Unpolled => None,
-            CloneTaskState::Woken { last_seen } | CloneTaskState::Sleeping { last_seen, .. } => {
-                *last_seen
-            }
-        }
-    }
+#[derive(Default)]
+pub(crate) enum CloneState {
+    #[default]
+    Unpolled,
+    Woken,
+    Sleeping,
 }
 
 #[derive(Debug, Clone)]
@@ -52,7 +36,7 @@ where
 {
     base_stream: Pin<Box<BaseStream>>,
     queue: BTreeMap<usize, Option<BaseStream::Item>>,
-    clones: BTreeMap<usize, CloneTaskState>,
+    clones: BTreeMap<usize, SiblingClone>,
     next_queue_index: usize,
 }
 
@@ -74,19 +58,8 @@ where
         self.clones
             .iter()
             .filter(|(i, _)| **i != clone_index)
-            .filter(|(_, state)| match state {
-                CloneTaskState::Woken {
-                    last_seen: last_seen_queued_item,
-                    ..
-                }
-                | CloneTaskState::Sleeping {
-                    last_seen: last_seen_queued_item,
-                    ..
-                } => {
-                    last_seen_queued_item.is_none()
-                        || last_seen_queued_item.is_some_and(|last| item_index > last)
-                }
-                CloneTaskState::Unpolled => false,
+            .filter(|(_, state)| {
+                state.last_seen.is_none() || state.last_seen.is_some_and(|last| item_index > last)
             })
             .count()
             == 0
@@ -115,15 +88,7 @@ where
         current_clone_id: usize,
         item: Option<&BaseStream::Item>,
     ) -> Option<usize> {
-        if self
-            .clones
-            .iter()
-            .filter(|(id, c)| {
-                **id != current_clone_id && matches!(c, CloneTaskState::Sleeping { .. })
-            })
-            .count()
-            > 0
-        {
+        if self.sleeping_siblings(current_clone_id) {
             trace!("Enqueuing item received while polling clone {current_clone_id}.");
             self.queue.insert(self.next_queue_index, item.cloned());
             let new_index = self.next_queue_index;
@@ -131,12 +96,12 @@ where
                 .iter_mut()
                 .filter(|(id, _)| **id != current_clone_id)
                 .for_each(|(other_clone_id, other_clone)| {
-                    if let CloneTaskState::Sleeping { waker, .. } = other_clone {
+                    if let CloneState::Sleeping = other_clone.state {
                         trace!("Waking up clone {other_clone_id}.");
-                        waker.wake_by_ref();
-                        *other_clone = CloneTaskState::Woken {
-                            last_seen: Some(self.next_queue_index),
-                        };
+                        other_clone.waker.take().unwrap().wake_by_ref();
+                        other_clone.state = CloneState::Woken;
+
+                        other_clone.last_seen = Some(self.next_queue_index);
                     } else {
                         trace!("The clone {other_clone_id} is not sleeping or unpolled.");
                     }
@@ -150,6 +115,16 @@ where
         }
     }
 
+    fn sleeping_siblings(&mut self, current_clone_id: usize) -> bool {
+        self.clones
+            .iter()
+            .filter(|(id, sibling)| {
+                **id != current_clone_id && matches!(sibling.state, CloneState::Sleeping)
+            })
+            .count()
+            > 0
+    }
+
     fn newest_on_queue(&self, item_index: usize) -> bool {
         self.queue.is_empty()
             || self
@@ -158,7 +133,100 @@ where
                 .all(|queue_index| *queue_index >= item_index)
     }
 
-    #[allow(clippy::too_many_lines)]
+    fn handle_woken_state(
+        &mut self,
+        state: &mut SiblingClone,
+        clone_waker: &Waker,
+    ) -> Poll<Option<BaseStream::Item>> {
+        match self.pop_queue(state.id).clone() {
+            TotalQueue::ItemPopped {
+                item,
+                index: peeked_index,
+            } => {
+                state.last_seen = Some(peeked_index);
+                if !self.newest_on_queue(peeked_index) {
+                    state.state = CloneState::Sleeping;
+                    state.waker = Some(clone_waker.clone());
+                }
+                Poll::Ready(item)
+            }
+            TotalQueue::ItemCloned {
+                index: popped_index,
+                item,
+            } => {
+                state.last_seen = self.enqueue_wake_siblings(state.id, item.as_ref());
+                if !self.newest_on_queue(popped_index) {
+                    state.waker = Some(clone_waker.clone());
+                    state.last_seen = Some(popped_index);
+                }
+                Poll::Ready(item.clone())
+            }
+            TotalQueue::Empty => self.poll_base_stream(state, clone_waker),
+        }
+    }
+
+    fn poll_base_stream(
+        &mut self,
+        state: &mut SiblingClone,
+        clone_waker: &Waker,
+    ) -> Poll<Option<BaseStream::Item>> {
+        match self
+            .base_stream
+            .poll_next_unpin(&mut Context::from_waker(clone_waker))
+        {
+            Poll::Pending => {
+                state.state = CloneState::Sleeping;
+                state.waker = Some(clone_waker.clone());
+                Poll::Pending
+            }
+            Poll::Ready(item) => {
+                state.state = CloneState::Unpolled;
+                self.enqueue_wake_siblings(state.id, item.as_ref());
+                Poll::Ready(item)
+            }
+        }
+    }
+
+    fn handle_sleeping_state(
+        &mut self,
+        state: &mut SiblingClone,
+        clone_waker: &Waker,
+    ) -> Poll<Option<BaseStream::Item>> {
+        if let CloneState::Sleeping = state.state {
+            if !state.waker.as_ref().unwrap().will_wake(clone_waker) {
+                state.waker = Some(clone_waker.clone());
+            }
+            if state.last_seen.is_none()
+                || state
+                    .last_seen
+                    .is_some_and(|last| !self.newest_on_queue(last))
+            {
+                self.poll_base_stream(state, clone_waker)
+            } else {
+                match self.pop_queue(state.id).clone() {
+                    TotalQueue::ItemPopped {
+                        item,
+                        index: peeked_index,
+                    } => {
+                        state.last_seen = Some(peeked_index);
+                        Poll::Ready(item)
+                    }
+                    TotalQueue::ItemCloned {
+                        index: popped_index,
+                        item,
+                    } => {
+                        self.enqueue_wake_siblings(state.id, item.as_ref());
+                        state.last_seen = Some(popped_index);
+                        Poll::Ready(item.clone())
+                    }
+                    TotalQueue::Empty => Poll::Pending,
+                }
+            }
+        } else {
+            unreachable!()
+        }
+    }
+
     pub(crate) fn poll_clone(
         &mut self,
         clone_id: usize,
@@ -167,153 +235,10 @@ where
         trace!("Clone {clone_id} is being polled on the split.");
         let mut state = self.clones.remove(&clone_id).unwrap();
 
-        let poll = match &mut state {
-            CloneTaskState::Woken { last_seen } => {
-                trace!("Clone {clone_id} was already woken.");
-                match self.pop_queue(clone_id).clone() {
-                    TotalQueue::ItemPopped {
-                        item,
-                        index: peeked_index,
-                    } => {
-                        trace!(
-                            "An item was popped from the queue of clone {clone_id} and it was \
-                             seen by all already."
-                        );
-                        *last_seen = Some(peeked_index);
-
-                        if !self.newest_on_queue(peeked_index) {
-                            state = CloneTaskState::Sleeping {
-                                waker: clone_waker.clone(),
-                                last_seen: Some(peeked_index),
-                            };
-                        }
-
-                        Poll::Ready(item)
-                    }
-                    TotalQueue::ItemCloned {
-                        index: popped_index,
-                        item,
-                    } => {
-                        trace!(
-                            "An item was popped from the queue of clone {clone_id} and it was not \
-                             seen by all yet."
-                        );
-
-                        *last_seen = self.enqueue_wake_siblings(clone_id, item.as_ref());
-
-                        if !self.newest_on_queue(popped_index) {
-                            state = CloneTaskState::Sleeping {
-                                waker: clone_waker.clone(),
-                                last_seen: Some(popped_index),
-                            };
-                        }
-
-                        Poll::Ready(item.clone())
-                    }
-
-                    TotalQueue::Empty => {
-                        trace!("The queue was empty for clone {clone_id}.");
-                        match self
-                            .base_stream
-                            .poll_next_unpin(&mut Context::from_waker(clone_waker))
-                        {
-                            Poll::Pending => {
-                                trace!("The base stream was not ready for clone {clone_id}.");
-                                state = CloneTaskState::Sleeping {
-                                    waker: clone_waker.clone(),
-                                    last_seen: None,
-                                };
-
-                                Poll::Pending
-                            }
-                            Poll::Ready(item) => {
-                                trace!("The base stream was ready for clone {clone_id}.");
-                                state = CloneTaskState::Unpolled;
-
-                                self.enqueue_wake_siblings(clone_id, item.as_ref());
-                                Poll::Ready(item)
-                            }
-                        }
-                    }
-                }
-            }
-            CloneTaskState::Unpolled => {
-                trace!("Fork {clone_id} was not polled yet.");
-                match self
-                    .base_stream
-                    .poll_next_unpin(&mut Context::from_waker(clone_waker))
-                {
-                    Poll::Pending => {
-                        trace!("The base stream was not ready for clone {clone_id}.");
-                        state = CloneTaskState::Sleeping {
-                            waker: clone_waker.clone(),
-                            last_seen: None,
-                        };
-                        Poll::Pending
-                    }
-                    Poll::Ready(item) => {
-                        self.enqueue_wake_siblings(clone_id, item.as_ref());
-                        Poll::Ready(item)
-                    }
-                }
-            }
-
-            CloneTaskState::Sleeping { waker, last_seen } => {
-                trace!("The clone {clone_id} was sleeping.");
-                if !waker.will_wake(clone_waker) {
-                    trace!("An old waker was registered for clone {clone_id}.");
-
-                    waker.clone_from(clone_waker);
-                }
-                if last_seen.is_none() || last_seen.is_some_and(|last| !self.newest_on_queue(last))
-                {
-                    match self
-                        .base_stream
-                        .poll_next_unpin(&mut Context::from_waker(clone_waker))
-                    {
-                        Poll::Pending => Poll::Pending,
-                        Poll::Ready(item) => {
-                            trace!("The base stream was ready for clone {clone_id}.");
-                            state = CloneTaskState::Woken {
-                                last_seen: self.enqueue_wake_siblings(clone_id, item.as_ref()),
-                            };
-
-                            Poll::Ready(item)
-                        }
-                    }
-                } else {
-                    trace!("The base stream was not ready for clone {clone_id}.");
-                    match self.pop_queue(clone_id).clone() {
-                        TotalQueue::ItemPopped {
-                            item,
-                            index: peeked_index,
-                        } => {
-                            trace!(
-                                "An item was popped from the queue of clone {clone_id} and it was \
-                                 seen by all already."
-                            );
-                            *last_seen = Some(peeked_index);
-                            Poll::Ready(item)
-                        }
-                        TotalQueue::ItemCloned {
-                            index: popped_index,
-                            item,
-                        } => {
-                            trace!(
-                                "An item was popped from the queue of clone {clone_id} and it was \
-                                 not seen by all yet."
-                            );
-                            self.enqueue_wake_siblings(clone_id, item.as_ref());
-                            *last_seen = Some(popped_index);
-                            Poll::Ready(item.clone())
-                        }
-                        TotalQueue::Empty => {
-                            trace!("The queue was empty for clone {clone_id}.");
-                            Poll::Pending
-                        }
-                    }
-                }
-            }
+        let poll = match &mut state.state {
+            CloneState::Woken => self.handle_woken_state(&mut state, clone_waker),
+            CloneState::Unpolled => self.poll_base_stream(&mut state, clone_waker),
+            CloneState::Sleeping => self.handle_sleeping_state(&mut state, clone_waker),
         };
 
         self.clones.insert(clone_id, state);
@@ -327,7 +252,15 @@ where
             .unwrap();
 
         trace!("Registering clone {min_available}.");
-        self.clones.insert(min_available, CloneTaskState::default());
+        self.clones.insert(
+            min_available,
+            SiblingClone {
+                state: CloneState::default(),
+                id: min_available,
+                last_seen: None,
+                waker: None,
+            },
+        );
         min_available
     }
 
@@ -338,7 +271,7 @@ where
         self.queue.retain(|item_index, _| {
             self.clones.values().any(|state| {
                 state
-                    .last_seen()
+                    .last_seen
                     .is_some_and(|last_index| *item_index > last_index)
             })
         });
@@ -347,24 +280,10 @@ where
     pub(crate) fn n_queued_items(&self, clone_id: usize) -> usize {
         let state = self.clones.get(&clone_id).unwrap();
 
-        match state {
-            CloneTaskState::Sleeping {
-                last_seen: last_seen_queued_item,
-                ..
-            }
-            | CloneTaskState::Woken {
-                last_seen: last_seen_queued_item,
-            } => match last_seen_queued_item {
-                Some(last_seen) => self.queue.range((*last_seen + 1)..).count(),
-                None => self.queue.len(),
-            },
-            CloneTaskState::Unpolled => 0,
+        match state.last_seen {
+            Some(last_seen) => self.queue.range((last_seen + 1)..).count(),
+            None => self.queue.len(),
         }
-    }
-
-    pub(crate) fn polled_once(&self, clone_id: usize) -> bool {
-        let state = self.clones.get(&clone_id).unwrap();
-        state.polled_once()
     }
 }
 
