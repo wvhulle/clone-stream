@@ -32,7 +32,7 @@ where
     pub(crate) fn pop_queue(&mut self, clone_id: usize) -> QueuePopState<Option<BaseStream::Item>> {
         if self.queue.is_empty() {
             QueuePopState::Empty
-        } else if self.has_lagging_siblings(clone_id) {
+        } else if !self.has_lagging_siblings(clone_id) {
             let first_entry = self.queue.pop_first().unwrap();
             QueuePopState::ItemPopped {
                 index: first_entry.0,
@@ -47,18 +47,30 @@ where
         }
     }
 
+    fn clone_has_sleeping_siblings(&mut self, clone: usize) -> bool {
+        self.clones
+            .iter()
+            .filter(|(id, sibling)| **id != clone && matches!(sibling.state, CloneState::Suspended))
+            .count()
+            > 0
+    }
+
+    /// Enqueues any new item that is received while polling the base stream for
+    /// a particular clone. This will push the item on the shared queue and
+    /// wake up any sleeping clones so that they can read/clone the new item on
+    /// the queue (after their next wakeup).
     pub(crate) fn enqueue_new_item(
         &mut self,
-        current_clone_id: usize,
+        clone: usize,
         new_item: Option<&BaseStream::Item>,
     ) -> Option<usize> {
-        if self.sleeping_siblings(current_clone_id) {
-            trace!("Enqueuing item received while polling clone {current_clone_id}.");
+        if self.clone_has_sleeping_siblings(clone) {
+            trace!("Enqueuing item received while polling clone {clone}.");
             self.queue.insert(self.next_queue_index, new_item.cloned());
             let new_index = self.next_queue_index;
             self.clones
                 .iter_mut()
-                .filter(|(id, _)| **id != current_clone_id)
+                .filter(|(id, _)| **id != clone)
                 .for_each(|(other_clone_id, other_clone)| {
                     if let CloneState::Suspended = other_clone.state {
                         trace!("Waking up clone {other_clone_id}.");
@@ -74,19 +86,9 @@ where
             self.next_queue_index += 1;
             Some(new_index)
         } else {
-            trace!("Clone {current_clone_id} is the only one active.");
+            trace!("Clone {clone} is the only one active.");
             None
         }
-    }
-
-    fn sleeping_siblings(&mut self, current_clone_id: usize) -> bool {
-        self.clones
-            .iter()
-            .filter(|(id, sibling)| {
-                **id != current_clone_id && matches!(sibling.state, CloneState::Suspended)
-            })
-            .count()
-            > 0
     }
 
     /// Checks if the given index points to an item that is the youngest (the
