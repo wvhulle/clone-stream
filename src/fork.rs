@@ -18,9 +18,9 @@ pub struct SiblingClone {
 #[derive(Default)]
 pub(crate) enum CloneState {
     #[default]
-    Unpolled,
-    Woken,
-    Sleeping,
+    UpToDate,
+    ReadyToPop,
+    Suspended,
 }
 
 pub(crate) struct Fork<BaseStream>
@@ -55,9 +55,9 @@ where
         let mut clone = self.clones.remove(&clone_id).unwrap();
 
         let poll = match &mut clone.state {
-            CloneState::Woken => self.handle_woken_state(&mut clone, clone_waker),
-            CloneState::Unpolled => self.handle_empty_queue(&mut clone, clone_waker),
-            CloneState::Sleeping => self.handle_sleeping_state(&mut clone, clone_waker),
+            CloneState::UpToDate => self.fetch_input_item(&mut clone, clone_waker),
+            CloneState::Suspended => self.wake_up(&mut clone, clone_waker),
+            CloneState::ReadyToPop => self.try_pop_queue(&mut clone, clone_waker),
         };
 
         self.clones.insert(clone_id, clone);
