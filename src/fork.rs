@@ -258,18 +258,14 @@ where
                 }
             }
 
-            CloneTaskState::Sleeping {
-                waker,
-                last_seen: last_seen_queued_item,
-            } => {
+            CloneTaskState::Sleeping { waker, last_seen } => {
                 trace!("The clone {clone_id} was sleeping.");
                 if !waker.will_wake(clone_waker) {
                     trace!("An old waker was registered for clone {clone_id}.");
 
                     waker.clone_from(clone_waker);
                 }
-                if last_seen_queued_item.is_none()
-                    || last_seen_queued_item.is_some_and(|last| !self.newest_on_queue(last))
+                if last_seen.is_none() || last_seen.is_some_and(|last| !self.newest_on_queue(last))
                 {
                     match self
                         .base_stream
@@ -296,7 +292,7 @@ where
                                 "An item was popped from the queue of clone {clone_id} and it was \
                                  seen by all already."
                             );
-                            *last_seen_queued_item = Some(peeked_index);
+                            *last_seen = Some(peeked_index);
                             Poll::Ready(item)
                         }
                         TotalQueue::ItemCloned {
@@ -308,7 +304,7 @@ where
                                  not seen by all yet."
                             );
                             self.enqueue_wake_siblings(clone_id, item.as_ref());
-                            *last_seen_queued_item = Some(popped_index);
+                            *last_seen = Some(popped_index);
                             Poll::Ready(item.clone())
                         }
                         TotalQueue::Empty => {
