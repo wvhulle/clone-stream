@@ -4,7 +4,7 @@ use log::trace;
 use crate::{Fork, fork::CloneState};
 
 #[derive(Debug, Clone)]
-pub(crate) enum TotalQueue<Item> {
+pub(crate) enum QueuePopState<Item> {
     ItemCloned { index: usize, item: Item },
     ItemPopped { index: usize, item: Item },
     Empty,
@@ -29,18 +29,18 @@ where
             })
     }
 
-    pub(crate) fn pop_queue(&mut self, clone_id: usize) -> TotalQueue<Option<BaseStream::Item>> {
+    pub(crate) fn pop_queue(&mut self, clone_id: usize) -> QueuePopState<Option<BaseStream::Item>> {
         if self.queue.is_empty() {
-            TotalQueue::Empty
+            QueuePopState::Empty
         } else if self.has_lagging_siblings(clone_id) {
             let first_entry = self.queue.pop_first().unwrap();
-            TotalQueue::ItemPopped {
+            QueuePopState::ItemPopped {
                 index: first_entry.0,
                 item: first_entry.1,
             }
         } else {
             let first = self.queue.first_key_value().unwrap();
-            TotalQueue::ItemCloned {
+            QueuePopState::ItemCloned {
                 index: *first.0,
                 item: first.1.clone(),
             }
@@ -60,10 +60,10 @@ where
                 .iter_mut()
                 .filter(|(id, _)| **id != current_clone_id)
                 .for_each(|(other_clone_id, other_clone)| {
-                    if let CloneState::Sleeping = other_clone.state {
+                    if let CloneState::Suspended = other_clone.state {
                         trace!("Waking up clone {other_clone_id}.");
                         other_clone.waker.take().unwrap().wake_by_ref();
-                        other_clone.state = CloneState::Woken;
+                        other_clone.state = CloneState::ReadyToPop;
 
                         other_clone.last_seen = Some(self.next_queue_index);
                     } else {
@@ -83,7 +83,7 @@ where
         self.clones
             .iter()
             .filter(|(id, sibling)| {
-                **id != current_clone_id && matches!(sibling.state, CloneState::Sleeping)
+                **id != current_clone_id && matches!(sibling.state, CloneState::Suspended)
             })
             .count()
             > 0
