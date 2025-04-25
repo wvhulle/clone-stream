@@ -93,10 +93,10 @@ impl<BaseStream> CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    #[must_use]
-    pub fn polled_once(&self) -> bool {
-        self.split.read().unwrap().polled_once(self.id)
-    }
+    // #[must_use]
+    // pub fn polled_once(&self) -> bool {
+    //     self.split.read().unwrap().polled_once(self.id)
+    // }
 
     #[must_use]
     pub fn n_queued_items(&self) -> usize {
