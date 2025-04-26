@@ -63,7 +63,7 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         let split = self.split.read().unwrap();
         let (lower, upper) = split.size_hint();
-        let n_cached = split.n_queued_items(self.id);
+        let n_cached = split.remaining_queued_items(self.id);
         (lower + n_cached, upper.map(|u| u + n_cached))
     }
 }
@@ -75,7 +75,7 @@ where
     fn is_terminated(&self) -> bool {
         let split = self.split.read().unwrap();
 
-        split.is_terminated() && split.n_queued_items(self.id) == 0
+        split.is_terminated() && split.remaining_queued_items(self.id) == 0
     }
 }
 
@@ -95,6 +95,6 @@ where
 {
     #[must_use]
     pub fn n_queued_items(&self) -> usize {
-        self.split.read().unwrap().n_queued_items(self.id)
+        self.split.read().unwrap().remaining_queued_items(self.id)
     }
 }

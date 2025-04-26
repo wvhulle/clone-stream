@@ -8,7 +8,7 @@ use std::{
 use futures::Stream;
 use log::trace;
 
-use crate::transitions::CloneState;
+use crate::transitions::{CloneState, OutputStatePoll};
 
 pub(crate) struct Fork<BaseStream>
 where
@@ -17,6 +17,7 @@ where
     pub(crate) base_stream: Pin<Box<BaseStream>>,
     pub(crate) queue: BTreeMap<usize, Option<BaseStream::Item>>,
     pub(crate) clones: HashMap<usize, CloneState>,
+    next_clone_index: usize,
     pub(crate) next_queue_index: usize,
 }
 
@@ -30,6 +31,7 @@ where
             clones: HashMap::default(),
             queue: BTreeMap::new(),
             next_queue_index: 0,
+            next_clone_index: 0,
         }
     }
 
@@ -39,30 +41,30 @@ where
         clone_waker: &Waker,
     ) -> Poll<Option<BaseStream::Item>> {
         trace!("Clone {clone_id} is being polled on the split.");
-        let mut clone = self.clones.remove(&clone_id).unwrap();
+        let current_state = self.clones.remove(&clone_id).unwrap();
 
-        let output = match &mut clone {
+        let OutputStatePoll {
+            poll_result,
+            state: new_state,
+        } = match current_state {
             CloneState::UpToDate => self.fetch_input_item(clone_waker),
             CloneState::Suspended(suspended) => suspended.wake_up(clone_waker, self),
             CloneState::ReadyToPop(_) => self.try_pop_queue(clone_waker),
         };
 
-        trace!(
-            "Inserting clone {} back into the fork with state: {:?}.",
-            clone_id, output.state
-        );
-        self.clones.insert(clone_id, output.state);
-        output.poll_result
+        trace!("Inserting clone {clone_id} back into the clone with state: {new_state:?}.");
+        self.clones.insert(clone_id, new_state);
+        poll_result
     }
 
+    #[allow(clippy::maybe_infinite_iter)]
     pub(crate) fn register(&mut self) -> usize {
-        let min_available = (0..)
-            .filter(|n| !self.clones.contains_key(n))
-            .nth(0)
-            .unwrap();
+        let min_available = self.next_clone_index;
 
         trace!("Registering clone {min_available}.");
         self.clones.insert(min_available, CloneState::default());
+
+        self.next_clone_index += 1;
         min_available
     }
 

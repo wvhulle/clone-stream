@@ -27,10 +27,10 @@ async fn skip() {
     info!("Creating stream");
     let rx = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
 
-    let mut fork = rx.fork();
+    let mut first_clone = rx.fork();
 
     info!("Creating clone");
-    let mut clone = fork.clone();
+    let mut second_clone = first_clone.clone();
 
     let start = Instant::now() + Duration::from_millis(10);
 
@@ -50,13 +50,13 @@ async fn skip() {
         trace!("Sent 2");
     });
 
-    let fork_receive = tokio::spawn(async move {
+    let first_clone_receive = tokio::spawn(async move {
         info!("A few milliseconds before listening for the first item on clone 0.");
         until(start, 2).await;
 
         trace!("Fork stream should receive 1");
         assert_eq!(
-            fork.next().await,
+            first_clone.next().await,
             Some(1),
             "Fork stream should have received 1"
         );
@@ -65,7 +65,7 @@ async fn skip() {
 
         trace!("Fork stream should now time out.");
         select! {
-            next = fork.next() => {
+            next = first_clone.next() => {
                 assert_eq!(next, None, "Fork stream should receive None");
             }
             () = until(start, 7) => {
@@ -79,7 +79,7 @@ async fn skip() {
 
         trace!("Clone stream should receive 1");
         assert_eq!(
-            clone.next().await,
+            second_clone.next().await,
             Some(1),
             "Clone stream should have received 1"
         );
@@ -89,7 +89,7 @@ async fn skip() {
 
         trace!("Clone stream should receive 2");
         select! {
-            next = clone.next() => {
+            next = second_clone.next() => {
                 assert_eq!(next, Some(2), "Clone stream should have received 2");
             },
             () = until(start, 7) => {
@@ -98,7 +98,7 @@ async fn skip() {
         }
     });
 
-    try_join_all([send, fork_receive, clone_receive])
+    try_join_all([send, first_clone_receive, clone_receive])
         .await
         .unwrap();
 }
