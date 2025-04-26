@@ -8,20 +8,7 @@ use std::{
 use futures::Stream;
 use log::trace;
 
-pub(crate) struct SiblingClone {
-    pub(crate) id: usize,
-    pub(crate) last_seen: Option<usize>,
-    pub(crate) waker: Option<Waker>,
-    pub(crate) state: CloneState,
-}
-
-#[derive(Default)]
-pub(crate) enum CloneState {
-    #[default]
-    UpToDate,
-    ReadyToPop,
-    Suspended,
-}
+use crate::transitions::CloneState;
 
 pub(crate) struct Fork<BaseStream>
 where
@@ -29,7 +16,7 @@ where
 {
     pub(crate) base_stream: Pin<Box<BaseStream>>,
     pub(crate) queue: BTreeMap<usize, Option<BaseStream::Item>>,
-    pub(crate) clones: HashMap<usize, SiblingClone>,
+    pub(crate) clones: HashMap<usize, CloneState>,
     pub(crate) next_queue_index: usize,
 }
 
@@ -54,14 +41,18 @@ where
         trace!("Clone {clone_id} is being polled on the split.");
         let mut clone = self.clones.remove(&clone_id).unwrap();
 
-        let poll = match &mut clone.state {
-            CloneState::UpToDate => self.fetch_input_item(&mut clone, clone_waker),
-            CloneState::Suspended => self.wake_up(&mut clone, clone_waker),
-            CloneState::ReadyToPop => self.try_pop_queue(&mut clone, clone_waker),
+        let output = match &mut clone {
+            CloneState::UpToDate => self.fetch_input_item(clone_waker),
+            CloneState::Suspended(suspended) => suspended.wake_up(clone_waker, self),
+            CloneState::ReadyToPop(_) => self.try_pop_queue(clone_waker),
         };
 
-        self.clones.insert(clone_id, clone);
-        poll
+        trace!(
+            "Inserting clone {} back into the fork with state: {:?}.",
+            clone_id, output.state
+        );
+        self.clones.insert(clone_id, output.state);
+        output.poll_result
     }
 
     pub(crate) fn register(&mut self) -> usize {
@@ -71,15 +62,7 @@ where
             .unwrap();
 
         trace!("Registering clone {min_available}.");
-        self.clones.insert(
-            min_available,
-            SiblingClone {
-                state: CloneState::default(),
-                id: min_available,
-                last_seen: None,
-                waker: None,
-            },
-        );
+        self.clones.insert(min_available, CloneState::default());
         min_available
     }
 
@@ -88,11 +71,9 @@ where
         self.clones.remove(&clone_id).unwrap();
 
         self.queue.retain(|item_index, _| {
-            self.clones.values().any(|state| {
-                state
-                    .last_seen
-                    .is_some_and(|last_index| *item_index > last_index)
-            })
+            self.clones
+                .values()
+                .any(|state| state.older_than(*item_index))
         });
     }
 }

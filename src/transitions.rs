@@ -4,11 +4,77 @@ use std::task::{Poll, Waker};
 use futures::{Stream, StreamExt};
 use log::trace;
 
-use crate::{
-    Fork,
-    fork::{CloneState, SiblingClone},
-    queue::QueuePopState,
-};
+use crate::{Fork, queue::QueuePopState};
+
+#[derive(Debug, Clone)]
+pub(crate) struct OutputStatePoll<T> {
+    pub(crate) state: CloneState,
+    pub(crate) poll_result: Poll<T>,
+}
+
+#[derive(Default, Debug, Clone)]
+pub(crate) enum CloneState {
+    #[default]
+    UpToDate,
+    ReadyToPop(ReadyToPop),
+    Suspended(Suspended),
+}
+
+impl CloneState {
+    pub(crate) fn older_than(&self, item_index: usize) -> bool {
+        match self {
+            CloneState::Suspended(Suspended { last_seen, .. }) => {
+                last_seen.is_none() || last_seen.is_some_and(|last| last < item_index)
+            }
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ReadyToPop {
+    pub(crate) last_seen: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Suspended {
+    pub(crate) last_seen: Option<usize>,
+    pub(crate) waker: Waker,
+}
+
+impl Suspended {
+    pub(crate) fn wake_up<BaseStream>(
+        &mut self,
+        clone_waker: &Waker,
+        fork: &mut Fork<BaseStream>,
+    ) -> OutputStatePoll<Option<BaseStream::Item>>
+    where
+        BaseStream: Stream<Item: Clone>,
+    {
+        if !self.waker.will_wake(clone_waker) {
+            self.waker.clone_from(clone_waker);
+        }
+        match self.last_seen {
+            None => {
+                // While polling this clone, the base stream was always ready immediately and
+                // there were no other clones sleeping.
+                fork.fetch_input_item(clone_waker)
+            }
+            Some(last) => {
+                // This clone has already been suspended at least once and an item was
+                // dispatched to this clone from another stream.
+                if fork.latest_item_on_queue(last) {
+                    // This clone already saw the latest item currently on the queue. We need to
+                    // poll the input stream.
+                    fork.fetch_input_item(clone_waker)
+                } else {
+                    // This clone has not seen the latest item on the queue yet.
+                    fork.try_pop_queue(clone_waker)
+                }
+            }
+        }
+    }
+}
 
 impl<BaseStream> Fork<BaseStream>
 where
@@ -16,93 +82,78 @@ where
 {
     pub(crate) fn fetch_input_item(
         &mut self,
-        clone: &mut SiblingClone,
         clone_waker: &Waker,
-    ) -> Poll<Option<BaseStream::Item>> {
+    ) -> OutputStatePoll<Option<BaseStream::Item>> {
+        trace!("Base stream is being polled.");
         match self
             .base_stream
             .poll_next_unpin(&mut Context::from_waker(clone_waker))
         {
-            Poll::Pending => {
-                clone.state = CloneState::Suspended;
-                clone.waker = Some(clone_waker.clone());
-                Poll::Pending
-            }
+            Poll::Pending => OutputStatePoll {
+                state: CloneState::Suspended(Suspended {
+                    last_seen: None,
+                    waker: clone_waker.clone(),
+                }),
+
+                poll_result: Poll::Pending,
+            },
             Poll::Ready(item) => {
-                clone.state = CloneState::UpToDate;
-                clone.waker = None;
-                self.enqueue_new_item(clone.id, item.as_ref());
-                Poll::Ready(item)
+                self.enqueue_new_item(item.as_ref());
+                OutputStatePoll {
+                    state: CloneState::UpToDate,
+                    poll_result: Poll::Ready(item),
+                }
             }
         }
     }
+}
 
-    pub(crate) fn wake_up(
-        &mut self,
-        clone: &mut SiblingClone,
-        clone_waker: &Waker,
-    ) -> Poll<Option<BaseStream::Item>> {
-        if let CloneState::Suspended = clone.state {
-            if !clone.waker.as_ref().unwrap().will_wake(clone_waker) {
-                clone.waker = Some(clone_waker.clone());
-            }
-            match clone.last_seen {
-                None => {
-                    trace!(
-                        "No items were pulled from the queue yet for clone {}.",
-                        clone.id
-                    );
-                    // While polling this clone, the base stream was always ready immediately and
-                    // there were no other clones sleeping.
-                    self.fetch_input_item(clone, clone_waker)
-                }
-                Some(last) => {
-                    // This clone has already been suspended at least once and an item was
-                    // dispatched to this clone from another stream.
-                    if self.latest_item_on_queue(last) {
-                        // This clone already saw the latest item currently on the queue. We need to
-                        // poll the input stream.
-                        self.fetch_input_item(clone, clone_waker)
-                    } else {
-                        // This clone has not seen the latest item on the queue yet.
-                        self.try_pop_queue(clone, clone_waker)
-                    }
-                }
-            }
-        } else {
-            unreachable!()
-        }
-    }
-
+impl<BaseStream> Fork<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
     pub(crate) fn try_pop_queue(
         &mut self,
-        sibling: &mut SiblingClone,
         clone_waker: &Waker,
-    ) -> Poll<Option<BaseStream::Item>> {
-        match self.pop_queue(sibling.id).clone() {
+    ) -> OutputStatePoll<Option<BaseStream::Item>> {
+        match self.pop_queue().clone() {
             QueuePopState::ItemPopped {
                 item,
                 index: peeked_index,
             } => {
-                sibling.last_seen = Some(peeked_index);
-                if !self.latest_item_on_queue(peeked_index) {
-                    sibling.state = CloneState::Suspended;
-                    sibling.waker = Some(clone_waker.clone());
+                let state = if self.latest_item_on_queue(peeked_index) {
+                    CloneState::UpToDate
+                } else {
+                    CloneState::Suspended(Suspended {
+                        waker: clone_waker.clone(),
+                        last_seen: Some(peeked_index),
+                    })
+                };
+                OutputStatePoll {
+                    poll_result: Poll::Ready(item),
+                    state,
                 }
-                Poll::Ready(item)
             }
             QueuePopState::ItemCloned {
                 index: popped_index,
                 item,
             } => {
-                sibling.last_seen = self.enqueue_new_item(sibling.id, item.as_ref());
-                if !self.latest_item_on_queue(popped_index) {
-                    sibling.state = CloneState::Suspended;
-                    sibling.waker = Some(clone_waker.clone());
+                let new_index = self.enqueue_new_item(item.as_ref());
+                let state = if self.latest_item_on_queue(popped_index) {
+                    CloneState::UpToDate
+                } else {
+                    CloneState::Suspended(Suspended {
+                        waker: clone_waker.clone(),
+                        last_seen: new_index,
+                    })
+                };
+
+                OutputStatePoll {
+                    state,
+                    poll_result: Poll::Ready(item.clone()),
                 }
-                Poll::Ready(item.clone())
             }
-            QueuePopState::Empty => self.fetch_input_item(sibling, clone_waker),
+            QueuePopState::Empty => self.fetch_input_item(clone_waker),
         }
     }
 }

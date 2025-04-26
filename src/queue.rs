@@ -1,7 +1,10 @@
 use futures::Stream;
 use log::trace;
 
-use crate::{Fork, fork::CloneState};
+use crate::{
+    Fork,
+    transitions::{CloneState, ReadyToPop, Suspended},
+};
 
 #[derive(Debug, Clone)]
 pub(crate) enum QueuePopState<Item> {
@@ -14,25 +17,21 @@ impl<BaseStream> Fork<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fn has_lagging_siblings(&self, clone_index: usize) -> bool {
+    fn has_lagging_siblings(&self) -> bool {
         self.queue.first_key_value().is_none()
             || self.queue.first_key_value().is_some_and(|(item_index, _)| {
                 self.clones
                     .iter()
-                    .filter(|(i, _)| **i != clone_index)
-                    .filter(|(_, state)| {
-                        state.last_seen.is_none()
-                            || state.last_seen.is_some_and(|last| *item_index > last)
-                    })
+                    .filter(|(_, clone)| clone.older_than(*item_index))
                     .count()
                     == 0
             })
     }
 
-    pub(crate) fn pop_queue(&mut self, clone_id: usize) -> QueuePopState<Option<BaseStream::Item>> {
+    pub(crate) fn pop_queue(&mut self) -> QueuePopState<Option<BaseStream::Item>> {
         if self.queue.is_empty() {
             QueuePopState::Empty
-        } else if !self.has_lagging_siblings(clone_id) {
+        } else if !self.has_lagging_siblings() {
             let first_entry = self.queue.pop_first().unwrap();
             QueuePopState::ItemPopped {
                 index: first_entry.0,
@@ -47,10 +46,10 @@ where
         }
     }
 
-    fn clone_has_sleeping_siblings(&mut self, clone: usize) -> bool {
+    fn clone_has_sleeping_siblings(&mut self) -> bool {
         self.clones
             .iter()
-            .filter(|(id, sibling)| **id != clone && matches!(sibling.state, CloneState::Suspended))
+            .filter(|(_, sibling)| matches!(sibling, CloneState::Suspended { .. }))
             .count()
             > 0
     }
@@ -61,23 +60,21 @@ where
     /// the queue (after their next wakeup).
     pub(crate) fn enqueue_new_item(
         &mut self,
-        clone: usize,
         new_item: Option<&BaseStream::Item>,
     ) -> Option<usize> {
-        if self.clone_has_sleeping_siblings(clone) {
-            trace!("Enqueuing item received while polling clone {clone}.");
+        if self.clone_has_sleeping_siblings() {
             self.queue.insert(self.next_queue_index, new_item.cloned());
             let new_index = self.next_queue_index;
             self.clones
                 .iter_mut()
-                .filter(|(id, _)| **id != clone)
                 .for_each(|(other_clone_id, other_clone)| {
-                    if let CloneState::Suspended = other_clone.state {
+                    if let CloneState::Suspended(Suspended { waker, .. }) = other_clone {
                         trace!("Waking up clone {other_clone_id}.");
-                        other_clone.waker.take().unwrap().wake_by_ref();
-                        other_clone.state = CloneState::ReadyToPop;
+                        waker.wake_by_ref();
 
-                        other_clone.last_seen = Some(self.next_queue_index);
+                        *other_clone = CloneState::ReadyToPop(ReadyToPop {
+                            last_seen: Some(new_index),
+                        });
                     } else {
                         trace!("The clone {other_clone_id} is not sleeping or unpolled.");
                     }
@@ -86,7 +83,7 @@ where
             self.next_queue_index += 1;
             Some(new_index)
         } else {
-            trace!("Clone {clone} is the only one active.");
+            trace!("No clones are sleeping.");
             None
         }
     }
@@ -104,9 +101,13 @@ where
     pub(crate) fn n_queued_items(&self, clone_id: usize) -> usize {
         let state = self.clones.get(&clone_id).unwrap();
 
-        match state.last_seen {
-            Some(last_seen) => self.queue.range((last_seen + 1)..).count(),
-            None => self.queue.len(),
+        match state {
+            CloneState::Suspended(Suspended { last_seen, .. })
+            | CloneState::ReadyToPop(ReadyToPop { last_seen, .. }) => match last_seen {
+                Some(last_seen) => self.queue.range((last_seen + 1)..).count(),
+                None => self.queue.len(),
+            },
+            CloneState::UpToDate => 0,
         }
     }
 }
