@@ -57,7 +57,6 @@ where
         poll_result
     }
 
-    #[allow(clippy::maybe_infinite_iter)]
     pub(crate) fn register(&mut self) -> usize {
         let min_available = self.next_clone_index;
 
