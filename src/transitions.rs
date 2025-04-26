@@ -53,9 +53,8 @@ impl Suspended {
     {
         match self.last_seen {
             None => {
-                // While polling this clone, the base stream was always ready immediately and
-                // there were no other clones sleeping.
-                fork.fetch_input_item(clone_waker)
+                // During the first poll, the clone is suspended and has not seen any item yet.
+                fork.try_pop_queue(clone_waker)
             }
             Some(last) => {
                 // This clone has already been suspended at least once and an item was
@@ -113,7 +112,7 @@ where
         &mut self,
         clone_waker: &Waker,
     ) -> OutputStatePoll<Option<BaseStream::Item>> {
-        match self.pop_queue().clone() {
+        match self.pop_queue() {
             QueuePopState::ItemPopped {
                 item,
                 index: peeked_index,

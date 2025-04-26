@@ -20,7 +20,7 @@ where
     /// Assuming the currently polled clone is taken out of the map of clones.
     fn has_lagging_siblings(&self) -> bool {
         self.queue
-            .first_key_value()
+            .last_key_value()
             .is_some_and(|(newest_item_index, _)| {
                 self.clones
                     .iter()
