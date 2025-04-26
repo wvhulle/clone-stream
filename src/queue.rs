@@ -17,14 +17,14 @@ impl<BaseStream> Fork<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
+    /// Assuming the currently polled clone is taken out of the map of clones.
     fn has_lagging_siblings(&self) -> bool {
-        self.queue.first_key_value().is_none()
-            || self.queue.first_key_value().is_some_and(|(item_index, _)| {
+        self.queue
+            .first_key_value()
+            .is_some_and(|(newest_item_index, _)| {
                 self.clones
                     .iter()
-                    .filter(|(_, clone)| clone.older_than(*item_index))
-                    .count()
-                    == 0
+                    .any(|(_, clone_state)| clone_state.older_than(*newest_item_index))
             })
     }
 
@@ -32,6 +32,7 @@ where
         if self.queue.is_empty() {
             QueuePopState::Empty
         } else if !self.has_lagging_siblings() {
+            // Assuming the currently polled clone is taken out of the map of clones.
             let first_entry = self.queue.pop_first().unwrap();
             QueuePopState::ItemPopped {
                 index: first_entry.0,
@@ -46,12 +47,10 @@ where
         }
     }
 
-    fn clone_has_sleeping_siblings(&mut self) -> bool {
+    fn suspended_clones(&mut self) -> bool {
         self.clones
             .iter()
-            .filter(|(_, sibling)| matches!(sibling, CloneState::Suspended { .. }))
-            .count()
-            > 0
+            .any(|(_, sibling)| matches!(sibling, CloneState::Suspended { .. }))
     }
 
     /// Enqueues any new item that is received while polling the base stream for
@@ -62,7 +61,7 @@ where
         &mut self,
         new_item: Option<&BaseStream::Item>,
     ) -> Option<usize> {
-        if self.clone_has_sleeping_siblings() {
+        if self.suspended_clones() {
             self.queue.insert(self.next_queue_index, new_item.cloned());
             let new_index = self.next_queue_index;
             self.clones
@@ -90,7 +89,7 @@ where
 
     /// Checks if the given index points to an item that is the youngest (the
     /// one with the largest index) in the queue.
-    pub(crate) fn latest_item_on_queue(&self, item_index: usize) -> bool {
+    pub(crate) fn latest_item_index(&self, item_index: usize) -> bool {
         self.queue.is_empty()
             || self
                 .queue
@@ -98,7 +97,7 @@ where
                 .all(|queue_index| *queue_index <= item_index)
     }
 
-    pub(crate) fn n_queued_items(&self, clone_id: usize) -> usize {
+    pub(crate) fn remaining_queued_items(&self, clone_id: usize) -> usize {
         let state = self.clones.get(&clone_id).unwrap();
 
         match state {

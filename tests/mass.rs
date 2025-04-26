@@ -21,13 +21,13 @@ async fn mass_send() {
 
     let get_ready = start + std::time::Duration::from_millis(10) * N_STREAM_CLONES as u32;
 
-    trace!("Waiting a few milliseconds before forking");
+    trace!("Waiting a few milliseconds before cloneing");
     let wait_for_receive_all = join_all((0..N_STREAM_CLONES).map(|i| {
         let receive_all = template_clone.clone().collect::<Vec<_>>();
         let expected = expect_numbers.clone();
         tokio::spawn(async move {
             trace!(
-                "Waiting a few milliseconds before receiving from fork {}",
+                "Waiting a few milliseconds before receiving from clone {}",
                 i + 1
             );
             sleep_until(get_ready).await;
@@ -77,7 +77,7 @@ async fn mass_send_interval() {
         let expected = expect_numbers.clone();
         tokio::spawn(async move {
             trace!(
-                "Waiting a few milliseconds before receiving from fork {}",
+                "Waiting a few milliseconds before receiving from clone {}",
                 i + 1
             );
             sleep_until(get_ready).await;

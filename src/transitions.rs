@@ -44,16 +44,13 @@ pub(crate) struct Suspended {
 
 impl Suspended {
     pub(crate) fn wake_up<BaseStream>(
-        &mut self,
+        &self,
         clone_waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> OutputStatePoll<Option<BaseStream::Item>>
     where
         BaseStream: Stream<Item: Clone>,
     {
-        if !self.waker.will_wake(clone_waker) {
-            self.waker.clone_from(clone_waker);
-        }
         match self.last_seen {
             None => {
                 // While polling this clone, the base stream was always ready immediately and
@@ -63,7 +60,7 @@ impl Suspended {
             Some(last) => {
                 // This clone has already been suspended at least once and an item was
                 // dispatched to this clone from another stream.
-                if fork.latest_item_on_queue(last) {
+                if fork.latest_item_index(last) {
                     // This clone already saw the latest item currently on the queue. We need to
                     // poll the input stream.
                     fork.fetch_input_item(clone_waker)
@@ -121,7 +118,7 @@ where
                 item,
                 index: peeked_index,
             } => {
-                let state = if self.latest_item_on_queue(peeked_index) {
+                let state = if self.latest_item_index(peeked_index) {
                     CloneState::UpToDate
                 } else {
                     CloneState::Suspended(Suspended {
@@ -139,7 +136,7 @@ where
                 item,
             } => {
                 let new_index = self.enqueue_new_item(item.as_ref());
-                let state = if self.latest_item_on_queue(popped_index) {
+                let state = if self.latest_item_index(popped_index) {
                     CloneState::UpToDate
                 } else {
                     CloneState::Suspended(Suspended {
