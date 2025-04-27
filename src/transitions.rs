@@ -54,7 +54,7 @@ impl Suspended {
         match self.last_seen {
             None => {
                 // During the first poll, the clone is suspended and has not seen any item yet.
-                fork.try_pop_queue(clone_waker)
+                fork.fetch_input_item(clone_waker)
             }
             Some(last) => {
                 // This clone has already been suspended at least once and an item was
