@@ -17,6 +17,8 @@ fn until(start: Instant, n: usize) -> impl Future<Output = ()> {
 async fn skip() {
     let _ = env_logger::builder()
         .format_file(true)
+        .format_level(false)
+        .format_timestamp_millis()
         .format_line_number(true)
         .filter_level(log::LevelFilter::Trace)
         .format_module_path(false)
