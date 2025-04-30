@@ -28,7 +28,7 @@ impl UnseenQueuedItemReady {
         match fork
             .queue
             .keys()
-            .cloned()
+            .copied()
             .find(|queue_index| *queue_index > self.unseen_ready_queue_item_index)
         {
             Some(newer_queue_item_index) => {

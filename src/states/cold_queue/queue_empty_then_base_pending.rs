@@ -60,20 +60,11 @@ impl QueueEmptyThenBasePending {
             }
         } else {
             let first_queue_index = *fork.queue.first_key_value().unwrap().0;
-            if !fork
+            if fork
                 .clones
                 .iter()
                 .any(|(_clone_id, state)| state.should_still_see_item(first_queue_index))
             {
-                trace!("No other clone is waiting for the first item in the queue.");
-                let popped_item = fork.queue.pop_first().unwrap().1;
-                NewStateAndPollResult {
-                    new_state: CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
-                        unseen_ready_queue_item_index: first_queue_index,
-                    }),
-                    poll_result: Poll::Ready(popped_item),
-                }
-            } else {
                 trace!("Cloning the first item in the queue.");
                 let cloned_item = fork.queue.first_key_value().unwrap().1.clone();
                 NewStateAndPollResult {
@@ -81,6 +72,15 @@ impl QueueEmptyThenBasePending {
                         unseen_ready_queue_item_index: first_queue_index,
                     }),
                     poll_result: Poll::Ready(cloned_item),
+                }
+            } else {
+                trace!("No other clone is waiting for the first item in the queue.");
+                let popped_item = fork.queue.pop_first().unwrap().1;
+                NewStateAndPollResult {
+                    new_state: CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
+                        unseen_ready_queue_item_index: first_queue_index,
+                    }),
+                    poll_result: Poll::Ready(popped_item),
                 }
             }
         }

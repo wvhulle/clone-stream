@@ -37,7 +37,7 @@ impl QueueEmptyThenBaseReady {
                     fork.next_queue_index += 1;
                 } else {
                     trace!("No other clone is interested in the new item.");
-                };
+                }
                 NewStateAndPollResult {
                     new_state: CloneState::QueueEmptyThenBaseReady(QueueEmptyThenBaseReady),
                     poll_result: Poll::Ready(item),

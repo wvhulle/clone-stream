@@ -3,10 +3,7 @@ use core::time::Duration;
 use clone_stream::ForkStream;
 use futures::{StreamExt, future::try_join_all};
 use log::{info, trace};
-use tokio::{
-    select,
-    time::{Instant, sleep_until},
-};
+use tokio::time::{Instant, sleep_until};
 
 fn until(start: Instant, n: usize) -> impl Future<Output = ()> {
     sleep_until(start + Duration::from_millis(10) * n as u32)

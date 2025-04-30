@@ -29,7 +29,7 @@ impl NoUnseenQueuedThenBasePending {
         match fork
             .queue
             .keys()
-            .cloned()
+            .copied()
             .find(|queue_index| *queue_index > self.most_recent_queue_item_index)
         {
             Some(newer_queue_item_index) => {
