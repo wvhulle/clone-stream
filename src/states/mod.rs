@@ -88,8 +88,7 @@ impl Default for CloneState {
 impl CloneState {
     pub(crate) fn should_still_see_item(&self, queue_item_index: usize) -> bool {
         trace!(
-            "Checking if state {} should still see queue item with index {queue_item_index}",
-            self
+            "Checking if state {self} should still see queue item with index {queue_item_index}"
         );
         match self {
             CloneState::NeverPolled(_never_polled) => false,

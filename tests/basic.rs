@@ -222,7 +222,7 @@ async fn cancel() {
             trace!("Second clone should receive 1 because it started waiting on the right moment.");
             select! {
                 next = second_clone.next() => {
-                    trace!("Received item from clone stream: {:?}", next);
+                    trace!("Received item from clone stream: {next:?}");
                     assert_eq!(next, Some(1), "Clone stream should have received 1");
                 }
                 () = until(start, 6) => {
