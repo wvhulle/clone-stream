@@ -39,7 +39,7 @@ impl NeverPolled {
         trace!("Currently in state 'NeverPolled'");
         match fork
             .base_stream
-            .poll_next_unpin(&mut Context::from_waker(waker))
+            .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
         {
             std::task::Poll::Ready(item) => {
                 trace!("The base stream is ready.");

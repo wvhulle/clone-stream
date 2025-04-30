@@ -7,7 +7,7 @@ pub fn log() {
         .format_file(true)
         .format_target(false)
         .format_level(false)
-        .format_timestamp_millis()
+        .format_timestamp_micros()
         .format_line_number(true)
         .filter_level(log::LevelFilter::Trace)
         .format_module_path(false)

@@ -1,6 +1,6 @@
 use std::{
     fmt::{Debug, Display},
-    task::Poll,
+    task::{Poll, Waker},
 };
 
 use cold_queue::{
@@ -113,19 +113,26 @@ impl CloneState {
         }
     }
 
-    pub(crate) fn wake_by_ref(&self) {
+    pub(crate) fn waker(&self) -> Option<Waker> {
         match self {
-            CloneState::NeverPolled(_never_polled) => {}
-            CloneState::QueueEmptyThenBaseReady(_queue_empty_then_base_ready) => {}
+            CloneState::NeverPolled(_never_polled) => None,
+            CloneState::QueueEmptyThenBaseReady(_queue_empty_then_base_ready) => None,
             CloneState::QueueEmptyThenBasePending(queue_empty_then_base_pending) => {
-                queue_empty_then_base_pending.waker.wake_by_ref();
+                Some(queue_empty_then_base_pending.waker.clone())
             }
             CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
-                no_unseen_queued_then_base_pending.waker.wake_by_ref();
+                Some(no_unseen_queued_then_base_pending.waker.clone())
             }
-            CloneState::NoUnseenQueuedThenBaseReady(_no_unseen_queued_then_base_ready) => {}
-            CloneState::UnseenQueuedItemReady(_unseen_queued_item_ready) => {}
+            CloneState::NoUnseenQueuedThenBaseReady(_no_unseen_queued_then_base_ready) => None,
+            CloneState::UnseenQueuedItemReady(_unseen_queued_item_ready) => None,
         }
+    }
+
+    pub(crate) fn wake_by_ref(&self) {
+        self.waker().map(|waker| {
+            trace!("Waking waker: {waker:?}");
+            waker.wake_by_ref();
+        });
     }
 
     pub(crate) fn cancel_pending(&mut self) {
