@@ -8,11 +8,9 @@
 //! The [`ForkStream`] trait is implemented for any stream that yields items
 //! that implement the `Clone` trait. This allows for easy conversion of a
 //! stream into a [`CloneStream`].
-
 mod clone;
 mod fork;
-mod queue;
-mod transitions;
+mod states;
 pub use clone::CloneStream;
 use fork::Fork;
 use futures::Stream;

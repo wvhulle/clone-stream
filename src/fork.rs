@@ -1,6 +1,6 @@
 use core::ops::Deref;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     pin::Pin,
     task::{Poll, Waker},
 };
@@ -8,7 +8,7 @@ use std::{
 use futures::Stream;
 use log::trace;
 
-use crate::transitions::{CloneState, OutputStatePoll};
+use crate::states::{CloneState, NewStateAndPollResult};
 
 pub(crate) struct Fork<BaseStream>
 where
@@ -16,7 +16,7 @@ where
 {
     pub(crate) base_stream: Pin<Box<BaseStream>>,
     pub(crate) queue: BTreeMap<usize, Option<BaseStream::Item>>,
-    pub(crate) clones: HashMap<usize, CloneState>,
+    pub(crate) clones: BTreeMap<usize, CloneState>,
     next_clone_index: usize,
     pub(crate) next_queue_index: usize,
 }
@@ -28,7 +28,7 @@ where
     pub(crate) fn new(base_stream: BaseStream) -> Self {
         Self {
             base_stream: Box::pin(base_stream),
-            clones: HashMap::default(),
+            clones: BTreeMap::default(),
             queue: BTreeMap::new(),
             next_queue_index: 0,
             next_clone_index: 0,
@@ -43,13 +43,26 @@ where
         trace!("Clone {clone_id} is being polled on the split.");
         let current_state = self.clones.remove(&clone_id).unwrap();
 
-        let OutputStatePoll {
+        let NewStateAndPollResult {
             poll_result,
-            state: new_state,
+            new_state,
         } = match current_state {
-            CloneState::UpToDate => self.fetch_input_item(clone_waker),
-            CloneState::Suspended(suspended) => suspended.wake_up(clone_waker, self),
-            CloneState::ReadyToPop(_) => self.try_pop_queue(clone_waker),
+            CloneState::NeverPolled(never_polled) => never_polled.handle(clone_waker, self),
+            CloneState::QueueEmptyThenBaseReady(queue_empty_base_pending) => {
+                queue_empty_base_pending.handle(clone_waker, self)
+            }
+            CloneState::QueueEmptyThenBasePending(queue_empty_base_ready) => {
+                queue_empty_base_ready.handle(clone_waker, self)
+            }
+            CloneState::NoUnseenQueuedThenBasePending(ready_from_queue) => {
+                ready_from_queue.handle(clone_waker, self)
+            }
+            CloneState::NoUnseenQueuedThenBaseReady(first_poll_pending_queue_empty) => {
+                first_poll_pending_queue_empty.handle(clone_waker, self)
+            }
+            CloneState::UnseenQueuedItemReady(first_poll_pending_queue_non_empty) => {
+                first_poll_pending_queue_non_empty.handle(clone_waker, self)
+            }
         };
 
         trace!("Inserting clone {clone_id} back into the clone with state: {new_state:?}.");
@@ -74,8 +87,29 @@ where
         self.queue.retain(|item_index, _| {
             self.clones
                 .values()
-                .any(|state| state.older_than(*item_index))
+                .any(|state| state.should_still_see_item(*item_index))
         });
+    }
+
+    pub(crate) fn wake_sleepers(&self) {
+        self.clones
+            .iter()
+            .filter(|(_clone_id, state)| state.should_still_see_base_item())
+            .for_each(|(_clone_id, state)| {
+                state.wake_by_ref();
+            });
+    }
+
+    pub(crate) fn remaining_queued_items(&self, clone_id: usize) -> usize {
+        self.queue
+            .iter()
+            .filter(|(item_index, _)| {
+                self.clones
+                    .get(&clone_id)
+                    .unwrap()
+                    .should_still_see_item(**item_index)
+            })
+            .count()
     }
 }
 
