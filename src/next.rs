@@ -42,7 +42,7 @@ where
     }
 }
 
-impl<'a, S> Drop for MyNext<'a, S>
+impl<S> Drop for MyNext<'_, S>
 where
     S: Stream<Item: Clone>,
 {
