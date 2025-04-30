@@ -77,7 +77,7 @@ where
         // self.wake_sleepers();
     }
 
-    pub(crate) fn waker<'a>(&'a self, extra_waker: &Waker) -> Waker {
+    pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
         let wakers = self
             .clones
             .iter()
