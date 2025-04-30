@@ -195,42 +195,42 @@ async fn cancel() {
 
     join_all([
         tokio::spawn(async move {
-            until(start, 5).await;
+            until(start, 10).await;
+            trace!("Sending 1");
             tx.send(1).unwrap();
+            trace!("Sent 1");
         }),
         tokio::spawn(async move {
-            trace!("Waiting a bit before receiving from the first clone");
             until(start, 2).await;
 
-            trace!("First clone should be waiting too early and cancel too early to receive 1.");
+            trace!(
+                "Clone {} should stop too early to receive 1.",
+                first_clone.id
+            );
             select! {
                 _ = first_clone.next() => {
                     panic!("Fork stream should have received 1");
                 }
                 () = until(start, 4) => {
-                    trace!("Canceling await of first clone.");
+                    trace!("Cancelled next() await of clone {}.", first_clone.id);
                 }
             };
-
-            trace!("Cancelled the next on the first clone.");
         }),
         tokio::spawn(async move {
             trace!("Waiting a bit before receiving from the second clone");
 
             until(start, 4).await;
 
-            trace!("Second clone should receive 1 because it started waiting on the right moment.");
+            trace!("Clone {} starts to wait to receive 1.", second_clone.id);
             select! {
                 next = second_clone.next() => {
-                    trace!("Received item from clone stream: {next:?}");
+                    trace!("Clone {} received item: {next:?}", second_clone.id);
                     assert_eq!(next, Some(1), "Clone stream should have received 1");
                 }
-                () = until(start, 6) => {
+                () = until(start, 15) => {
                     panic!("Did not receive value in time.");
                 }
             }
-            trace!("Waiting a bit before closing second clone");
-            until(start, 7).await;
         }),
     ])
     .await

@@ -2,7 +2,8 @@ use core::ops::Deref;
 use std::{
     collections::BTreeMap,
     pin::Pin,
-    task::{Poll, Waker},
+    sync::Arc,
+    task::{Poll, Wake, Waker},
 };
 
 use futures::Stream;
@@ -73,7 +74,21 @@ where
     pub(crate) fn cancel_pending(&mut self, clone_id: usize) {
         trace!("Canceling any pending .next() futures on cloned stream {clone_id}.");
         self.clones.get_mut(&clone_id).unwrap().cancel_pending();
-        self.wake_sleepers();
+        // self.wake_sleepers();
+    }
+
+    pub(crate) fn waker<'a>(&'a self, extra_waker: &Waker) -> Waker {
+        let wakers = self
+            .clones
+            .iter()
+            .filter(|(_clone_id, state)| state.should_still_see_base_item())
+            .filter_map(|(_clone_id, state)| state.waker().clone())
+            .chain(std::iter::once(extra_waker.clone()))
+            .collect::<Vec<_>>();
+
+        trace!("Found {} wakers.", wakers.len());
+
+        Waker::from(Arc::new(SleepWaker { wakers }))
     }
 
     pub(crate) fn register(&mut self) -> usize {
@@ -127,5 +142,18 @@ where
 
     fn deref(&self) -> &Self::Target {
         &self.base_stream
+    }
+}
+
+pub(crate) struct SleepWaker {
+    wakers: Vec<Waker>,
+}
+
+impl Wake for SleepWaker {
+    fn wake(self: Arc<Self>) {
+        trace!("Waking up the fork.");
+        self.wakers.iter().for_each(|waker| {
+            waker.wake_by_ref();
+        });
     }
 }

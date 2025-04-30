@@ -40,7 +40,7 @@ impl QueueEmptyThenBasePending {
             trace!("Queue is empty");
             match fork
                 .base_stream
-                .poll_next_unpin(&mut Context::from_waker(waker))
+                .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
             {
                 Poll::Ready(item) => {
                     if fork
