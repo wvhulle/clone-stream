@@ -1,4 +1,7 @@
-use std::task::{Context, Poll, Waker};
+use std::{
+    fmt::Display,
+    task::{Context, Poll, Waker},
+};
 
 use futures::{Stream, StreamExt};
 
@@ -11,8 +14,14 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct NoUnseenQueuedThenBaseReady;
+
+impl Display for NoUnseenQueuedThenBaseReady {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NoUnseenQueuedThenBaseReady")
+    }
+}
 
 impl NoUnseenQueuedThenBaseReady {
     pub(crate) fn handle<BaseStream>(

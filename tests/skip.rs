@@ -1,28 +1,16 @@
 use core::time::Duration;
 
 use clone_stream::ForkStream;
-use futures::{StreamExt, future::try_join_all};
+use futures::future::try_join_all;
 use log::{info, trace};
-use tokio::{
-    select,
-    time::{Instant, sleep_until},
-};
+use tokio::{select, time::Instant};
 
-fn until(start: Instant, n: usize) -> impl Future<Output = ()> {
-    sleep_until(start + Duration::from_millis(10) * n as u32)
-}
+mod util;
+
+use util::until;
 
 #[tokio::test]
-
 async fn skip() {
-    let _ = env_logger::builder()
-        .format_file(true)
-        .format_level(false)
-        .format_timestamp_millis()
-        .format_line_number(true)
-        .filter_level(log::LevelFilter::Trace)
-        .format_module_path(false)
-        .try_init();
     info!("Starting test");
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<usize>();
 

@@ -1,4 +1,7 @@
-use std::task::{Context, Poll, Waker};
+use std::{
+    fmt::Display,
+    task::{Context, Poll, Waker},
+};
 
 use futures::{Stream, StreamExt};
 
@@ -11,9 +14,15 @@ use crate::{
     states::{CloneState, NewStateAndPollResult},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct UnseenQueuedItemReady {
     pub(crate) unseen_ready_queue_item_index: usize,
+}
+
+impl Display for UnseenQueuedItemReady {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "UnseenQueuedItemReady")
+    }
 }
 
 impl UnseenQueuedItemReady {

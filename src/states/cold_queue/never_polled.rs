@@ -1,4 +1,7 @@
-use std::task::{Context, Poll, Waker};
+use std::{
+    fmt::Display,
+    task::{Context, Poll, Waker},
+};
 
 use futures::{Stream, StreamExt};
 use log::trace;
@@ -15,8 +18,14 @@ use crate::{
     },
 };
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Clone)]
 pub(crate) struct NeverPolled;
+
+impl Display for NeverPolled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NeverPolled")
+    }
+}
 
 impl NeverPolled {
     pub(crate) fn handle<BaseStream>(

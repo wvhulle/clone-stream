@@ -1,7 +1,7 @@
 use std::future::ready;
 
 use clone_stream::ForkStream;
-use futures::{FutureExt, Stream, StreamExt, executor::block_on, stream::FusedStream};
+use futures::{FutureExt, Stream, executor::block_on, stream::FusedStream};
 
 #[test]
 fn test_one_clone_terminated() {

@@ -1,4 +1,7 @@
-use std::task::{Context, Poll, Waker};
+use std::{
+    fmt::Display,
+    task::{Context, Poll, Waker},
+};
 
 use futures::{Stream, StreamExt};
 use log::trace;
@@ -9,8 +12,14 @@ use crate::{
     states::{CloneState, NewStateAndPollResult},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct QueueEmptyThenBaseReady;
+
+impl Display for QueueEmptyThenBaseReady {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "QueueEmptyThenBaseReady")
+    }
+}
 
 impl QueueEmptyThenBaseReady {
     pub(crate) fn handle<BaseStream>(
