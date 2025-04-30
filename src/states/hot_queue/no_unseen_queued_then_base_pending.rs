@@ -1,4 +1,7 @@
-use std::task::{Context, Poll, Waker};
+use std::{
+    fmt::Display,
+    task::{Context, Poll, Waker},
+};
 
 use futures::{Stream, StreamExt};
 
@@ -11,10 +14,16 @@ use crate::{
     states::{CloneState, NewStateAndPollResult},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct NoUnseenQueuedThenBasePending {
     pub(crate) waker: Waker,
     pub(crate) most_recent_queue_item_index: usize,
+}
+
+impl Display for NoUnseenQueuedThenBasePending {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NoUnseenQueuedThenBasePending")
+    }
 }
 
 impl NoUnseenQueuedThenBasePending {

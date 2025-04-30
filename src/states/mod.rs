@@ -1,4 +1,7 @@
-use std::task::Poll;
+use std::{
+    fmt::{Debug, Display},
+    task::Poll,
+};
 
 use cold_queue::{
     never_polled::NeverPolled, queue_empty_then_base_pending::QueueEmptyThenBasePending,
@@ -9,6 +12,7 @@ use hot_queue::{
     no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
     unseen_queued_item_ready::UnseenQueuedItemReady,
 };
+use log::trace;
 
 pub mod cold_queue;
 pub mod hot_queue;
@@ -19,7 +23,7 @@ pub(crate) struct NewStateAndPollResult<T> {
     pub(crate) poll_result: Poll<T>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) enum CloneState {
     NeverPolled(NeverPolled),
     QueueEmptyThenBaseReady(QueueEmptyThenBaseReady),
@@ -27,6 +31,52 @@ pub(crate) enum CloneState {
     NoUnseenQueuedThenBasePending(NoUnseenQueuedThenBasePending),
     NoUnseenQueuedThenBaseReady(NoUnseenQueuedThenBaseReady),
     UnseenQueuedItemReady(UnseenQueuedItemReady),
+}
+
+impl Display for CloneState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CloneState::NeverPolled(never_polled) => write!(f, "{never_polled}"),
+            CloneState::QueueEmptyThenBaseReady(queue_empty_then_base_ready) => {
+                write!(f, "{queue_empty_then_base_ready}")
+            }
+            CloneState::QueueEmptyThenBasePending(queue_empty_then_base_pending) => {
+                write!(f, "{queue_empty_then_base_pending}")
+            }
+            CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
+                write!(f, "{no_unseen_queued_then_base_pending}")
+            }
+            CloneState::NoUnseenQueuedThenBaseReady(no_unseen_queued_then_base_ready) => {
+                write!(f, "{no_unseen_queued_then_base_ready}")
+            }
+            CloneState::UnseenQueuedItemReady(unseen_queued_item_ready) => {
+                write!(f, "{unseen_queued_item_ready}")
+            }
+        }
+    }
+}
+
+impl Debug for CloneState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CloneState::NeverPolled(never_polled) => write!(f, "{never_polled}"),
+            CloneState::QueueEmptyThenBaseReady(queue_empty_then_base_ready) => {
+                write!(f, "{queue_empty_then_base_ready}")
+            }
+            CloneState::QueueEmptyThenBasePending(queue_empty_then_base_pending) => {
+                write!(f, "{queue_empty_then_base_pending}")
+            }
+            CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
+                write!(f, "{no_unseen_queued_then_base_pending}")
+            }
+            CloneState::NoUnseenQueuedThenBaseReady(no_unseen_queued_then_base_ready) => {
+                write!(f, "{no_unseen_queued_then_base_ready}")
+            }
+            CloneState::UnseenQueuedItemReady(unseen_queued_item_ready) => {
+                write!(f, "{unseen_queued_item_ready}")
+            }
+        }
+    }
 }
 
 impl Default for CloneState {
@@ -37,6 +87,10 @@ impl Default for CloneState {
 
 impl CloneState {
     pub(crate) fn should_still_see_item(&self, queue_item_index: usize) -> bool {
+        trace!(
+            "Checking if state {} should still see queue item with index {queue_item_index}",
+            self
+        );
         match self {
             CloneState::NeverPolled(_never_polled) => false,
             CloneState::QueueEmptyThenBaseReady(_queue_empty_then_base_ready) => false,
@@ -72,6 +126,18 @@ impl CloneState {
             }
             CloneState::NoUnseenQueuedThenBaseReady(_no_unseen_queued_then_base_ready) => {}
             CloneState::UnseenQueuedItemReady(_unseen_queued_item_ready) => {}
+        }
+    }
+
+    pub(crate) fn cancel(&mut self) {
+        if matches!(
+            self,
+            CloneState::QueueEmptyThenBasePending(_) | CloneState::NoUnseenQueuedThenBasePending(_)
+        ) {
+            trace!("Reseting to default non-pending state.");
+            *self = CloneState::default();
+        } else {
+            trace!("No need to reset state, beause already non-pending.");
         }
     }
 }

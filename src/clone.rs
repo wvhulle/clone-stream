@@ -5,8 +5,9 @@ use std::{
 };
 
 use futures::{Stream, stream::FusedStream};
+use log::trace;
 
-use crate::fork::Fork;
+use crate::{fork::Fork, next::MyNext};
 
 /// A stream that implements `Clone` and returns cloned items from a base
 /// stream.
@@ -14,7 +15,7 @@ pub struct CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    split: Arc<RwLock<Fork<BaseStream>>>,
+    pub(crate) split: Arc<RwLock<Fork<BaseStream>>>,
     pub id: usize,
 }
 
@@ -95,6 +96,11 @@ where
 {
     #[must_use]
     pub fn n_queued_items(&self) -> usize {
+        trace!("Getting the number of queued items for clone {}.", self.id);
         self.split.read().unwrap().remaining_queued_items(self.id)
+    }
+
+    pub fn next(&mut self) -> MyNext<BaseStream> {
+        MyNext::new(self)
     }
 }

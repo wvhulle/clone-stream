@@ -70,6 +70,12 @@ where
         poll_result
     }
 
+    pub(crate) fn cancel(&mut self, clone_id: usize) {
+        trace!("Canceling any pending next on clone {clone_id}.");
+        self.clones.get_mut(&clone_id).unwrap().cancel();
+        self.wake_sleepers();
+    }
+
     pub(crate) fn register(&mut self) -> usize {
         let min_available = self.next_clone_index;
 
