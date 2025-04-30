@@ -128,7 +128,7 @@ impl CloneState {
         }
     }
 
-    pub(crate) fn cancel(&mut self) {
+    pub(crate) fn cancel_pending(&mut self) {
         if matches!(
             self,
             CloneState::QueueEmptyThenBasePending(_) | CloneState::NoUnseenQueuedThenBasePending(_)
