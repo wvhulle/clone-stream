@@ -7,7 +7,7 @@ use std::{
 use futures::{Stream, stream::FusedStream};
 use log::trace;
 
-use crate::{fork::Fork, next::MyNext};
+use crate::{fork::Fork, next::Next};
 
 /// A stream that implements `Clone` and returns cloned items from a base
 /// stream.
@@ -100,7 +100,7 @@ where
         self.split.read().unwrap().remaining_queued_items(self.id)
     }
 
-    pub fn next(&mut self) -> MyNext<BaseStream> {
-        MyNext::new(self)
+    pub fn next(&mut self) -> Next<BaseStream> {
+        Next::new(self)
     }
 }
