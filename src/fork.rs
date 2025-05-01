@@ -74,7 +74,6 @@ where
     pub(crate) fn cancel_pending(&mut self, clone_id: usize) {
         trace!("Canceling any pending .next() futures on cloned stream {clone_id}.");
         self.clones.get_mut(&clone_id).unwrap().cancel_pending();
-        // self.wake_sleepers();
     }
 
     pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
