@@ -134,16 +134,4 @@ impl CloneState {
             waker.wake_by_ref();
         });
     }
-
-    pub(crate) fn cancel_pending(&mut self) {
-        if matches!(
-            self,
-            CloneState::QueueEmptyThenBasePending(_) | CloneState::NoUnseenQueuedThenBasePending(_)
-        ) {
-            trace!("Reseting to default non-pending state.");
-            *self = CloneState::default();
-        } else {
-            trace!("No need to reset state, beause already non-pending.");
-        }
-    }
 }

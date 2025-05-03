@@ -10,7 +10,7 @@
 //! stream into a [`CloneStream`].
 mod clone;
 mod fork;
-mod next;
+
 mod states;
 
 pub use clone::CloneStream;
