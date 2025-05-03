@@ -41,7 +41,7 @@ where
         clone_id: usize,
         clone_waker: &Waker,
     ) -> Poll<Option<BaseStream::Item>> {
-        trace!("Clone {clone_id} is being polled on the split.");
+        trace!("Clone {clone_id} is being polled through the fork.");
         let current_state = self.clones.remove(&clone_id).unwrap();
 
         let NewStateAndPollResult {
@@ -66,7 +66,7 @@ where
             }
         };
 
-        trace!("Inserting clone {clone_id} back into the clone with state: {new_state:?}.");
+        trace!("Inserting clone {clone_id} back into the fork with state: {new_state:?}.");
         self.clones.insert(clone_id, new_state);
         poll_result
     }
@@ -106,15 +106,6 @@ where
         });
     }
 
-    pub(crate) fn wake_sleepers(&self) {
-        self.clones
-            .iter()
-            .filter(|(_clone_id, state)| state.should_still_see_base_item())
-            .for_each(|(_clone_id, state)| {
-                state.wake_by_ref();
-            });
-    }
-
     pub(crate) fn remaining_queued_items(&self, clone_id: usize) -> usize {
         self.queue
             .iter()
@@ -145,9 +136,7 @@ pub(crate) struct SleepWaker {
 
 impl Wake for SleepWaker {
     fn wake(self: Arc<Self>) {
-        trace!("Waking up the fork.");
-        self.wakers.iter().for_each(|waker| {
-            waker.wake_by_ref();
-        });
+        trace!("Waking up all sleeping clones.");
+        self.wakers.iter().for_each(Waker::wake_by_ref);
     }
 }
