@@ -2,7 +2,6 @@ use core::time::Duration;
 
 use clone_stream::ForkStream;
 use futures::{StreamExt, future::try_join_all};
-use log::{info, trace};
 use tokio::time::Instant;
 use util::until;
 mod util;
@@ -28,7 +27,6 @@ async fn clone_pair_receives() {
     });
 
     let adam_receives = tokio::spawn(async move {
-        info!("A few milliseconds before listening for the first item on clone 0.");
         until(start, 2).await;
 
         assert_eq!(
@@ -41,12 +39,7 @@ async fn clone_pair_receives() {
     let bob_receives = tokio::spawn(async move {
         until(start, 2).await;
 
-        trace!("Clone stream should receive 'a'");
-        assert_eq!(
-            bob.next().await,
-            Some('a'),
-            "Clone stream should have received 'a'."
-        );
+        assert_eq!(bob.next().await, Some('a'), "Bob should have received 'a'.");
     });
 
     try_join_all([send, adam_receives, bob_receives])
