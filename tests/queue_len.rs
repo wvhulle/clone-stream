@@ -2,7 +2,7 @@ use core::time::Duration;
 
 use clone_stream::ForkStream;
 use futures::{StreamExt, future::join_all};
-use log::{info, trace};
+use log::trace;
 use tokio::{select, time::Instant};
 use util::until;
 mod util;
