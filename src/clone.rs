@@ -15,7 +15,7 @@ pub struct CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    pub(crate) split: Arc<RwLock<Fork<BaseStream>>>,
+    pub(crate) fork: Arc<RwLock<Fork<BaseStream>>>,
     pub id: usize,
 }
 
@@ -23,12 +23,12 @@ impl<BaseStream> From<Fork<BaseStream>> for CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fn from(mut split: Fork<BaseStream>) -> Self {
-        let id = split.register();
+    fn from(mut fork: Fork<BaseStream>) -> Self {
+        let id = fork.register();
 
         Self {
             id,
-            split: Arc::new(RwLock::new(split)),
+            fork: Arc::new(RwLock::new(fork)),
         }
     }
 }
@@ -38,12 +38,12 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn clone(&self) -> Self {
-        let mut split = self.split.write().unwrap();
-        let min_available = split.register();
-        drop(split);
+        let mut fork = self.fork.write().unwrap();
+        let min_available = fork.register();
+        drop(fork);
 
         Self {
-            split: self.split.clone(),
+            fork: self.fork.clone(),
             id: min_available,
         }
     }
@@ -57,14 +57,14 @@ where
 
     fn poll_next(self: Pin<&mut Self>, current_task: &mut Context) -> Poll<Option<Self::Item>> {
         let waker = current_task.waker();
-        let mut split = self.split.write().unwrap();
-        split.poll_clone(self.id, waker)
+        let mut fork = self.fork.write().unwrap();
+        fork.poll_clone(self.id, waker)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let split = self.split.read().unwrap();
-        let (lower, upper) = split.size_hint();
-        let n_cached = split.remaining_queued_items(self.id);
+        let fork = self.fork.read().unwrap();
+        let (lower, upper) = fork.size_hint();
+        let n_cached = fork.remaining_queued_items(self.id);
         (lower + n_cached, upper.map(|u| u + n_cached))
     }
 }
@@ -74,9 +74,9 @@ where
     BaseStream: FusedStream<Item: Clone>,
 {
     fn is_terminated(&self) -> bool {
-        let split = self.split.read().unwrap();
+        let fork = self.fork.read().unwrap();
 
-        split.is_terminated() && split.remaining_queued_items(self.id) == 0
+        fork.is_terminated() && fork.remaining_queued_items(self.id) == 0
     }
 }
 
@@ -85,8 +85,8 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn drop(&mut self) {
-        let mut split = self.split.write().unwrap();
-        split.unregister(self.id);
+        let mut fork = self.fork.write().unwrap();
+        fork.unregister(self.id);
     }
 }
 
@@ -97,6 +97,6 @@ where
     #[must_use]
     pub fn n_queued_items(&self) -> usize {
         trace!("Getting the number of queued items for clone {}.", self.id);
-        self.split.read().unwrap().remaining_queued_items(self.id)
+        self.fork.read().unwrap().remaining_queued_items(self.id)
     }
 }

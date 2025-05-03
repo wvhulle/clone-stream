@@ -127,11 +127,4 @@ impl CloneState {
             CloneState::UnseenQueuedItemReady(_unseen_queued_item_ready) => None,
         }
     }
-
-    pub(crate) fn wake_by_ref(&self) {
-        self.waker().map(|waker| {
-            trace!("Waking waker: {waker:?}");
-            waker.wake_by_ref();
-        });
-    }
 }

@@ -1,13 +1,17 @@
-//! # Clone streams with `clone-stream`
+//! # Lazily clone streams with `clone-stream`
 //!
 //! This module provides a way to fork a stream into multiple streams that can
-//! be cloned and used independently. The `CloneStream` struct implements the
-//! `Stream` trait and allows for cloning of the stream, while the `Fork` struct
-//! manages the underlying stream and its clones.
+//! be cloned and used independently.
+//!
+//! The [`CloneStream`] struct implements the
+//! [`Stream`] trait and allows for cloning of the stream, while the [`Fork`]
+//! struct manages the underlying "base" (or input) stream and the other sibling
+//! stream clones.
 //!
 //! The [`ForkStream`] trait is implemented for any stream that yields items
 //! that implement the `Clone` trait. This allows for easy conversion of a
-//! stream into a [`CloneStream`].
+//! stream into a [`CloneStream`]. Just import this trait if you want to use the
+//! functionality in this library.
 mod clone;
 mod fork;
 

@@ -70,7 +70,7 @@ impl UnseenQueuedItemReady {
                         {
                             fork.queue.insert(fork.next_queue_index, item.clone());
                             fork.next_queue_index += 1;
-                            fork.wake_sleepers();
+                            
                         }
                         NewStateAndPollResult {
                             new_state: CloneState::NoUnseenQueuedThenBaseReady(
