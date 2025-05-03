@@ -1,10 +1,13 @@
-# Rust library `clone-stream`
+# Clone-stream
 
-This Rust library allows you to convert non-cloneable streams into cloneable streams. The only requirement is that the item type of the base-stream is cloneable. The streams are supposed to be Rust types implementing the `Stream` trait from the common `futures` crate.
+Convert any stream into a stream that is `Clone`. The only requirement is that the item type of the base-stream implements `Clone`.
+
+
+_Remark: A stream is an implementor of the `Stream` trait from the `futures` crate (also called an async iterator)._
 
 ## Installation
 
-Make sure you have installed `rustup`, which installs `cargo`. Inside an existing `cargo` project:
+In an existing `cargo` project:
 
 ```bash
 cargo add clone-stream futures
@@ -18,21 +21,11 @@ cargo add --git https://github.com/wvhulle/clone-stream
 
 ## Usage
 
-Import the trait `ForkStream` from this crate and call `fork` on your un-cloneable `Stream`:
-
-```rust
-use futures::{FutureExt, StreamExt, stream};
-use clone_stream::ForkStream;
-
-let uncloneable_stream = stream::iter(0..10);
-let cloneable_stream = uncloneable_stream.fork();
-let mut cloned_stream = cloneable_stream.clone();
-```
-
+See the [docs](https://docs.rs/clone-stream/latest/clone_stream/) for the API documentation.
 
 
 ## How does it work?
 
-This small project was an exercise for me making streams implement `Clone` without spawning tasks. 
+The Rust integration tests in [tests](./tests) show some examples.
 
-See the posts about functional async combinators on [my blog](https://willemvanhulle.tech/blog) for more technical information.
+See [my blog](https://willemvanhulle.tech/blog) for more technical information.
