@@ -27,8 +27,9 @@ where
     }
 }
 
-/// A trait that turns a `Stream` with cloneable `Item`s into a cloneable stream
-/// that yields items of the same original item type.
+/// A trait that turns an input [`Stream`] with [`Stream::Item`]s that implement
+/// [`Clone`] into a stream that is [`Clone`]. The output stream yields items of
+/// the same type as the input stream.
 pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// Forks the stream into a new stream that can be cloned.
     ///
@@ -37,9 +38,9 @@ pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// ```rust
     /// use clone_stream::ForkStream;
     /// use futures::{FutureExt, StreamExt, stream};
-    /// let uncloneable_stream = stream::iter(0..10);
-    /// let cloneable_stream = uncloneable_stream.fork();
-    /// let mut cloned_stream = cloneable_stream.clone();
+    /// let non_clone_stream = stream::iter(0..10);
+    /// let clone_stream = non_clone_stream.fork();
+    /// let mut cloned_stream = clone_stream.clone();
     /// ```
     fn fork(self) -> CloneStream<Self> {
         CloneStream::from(Fork::new(self))
