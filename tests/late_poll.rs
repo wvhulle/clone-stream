@@ -104,11 +104,7 @@ async fn poll_after_send() {
     let bob_receives = tokio::spawn(async move {
         until(start, 2).await;
 
-        assert_eq!(
-            bob.next().await,
-            Some('a'),
-            "Clone stream should have received 1"
-        );
+        assert_eq!(bob.next().await, Some('a'), "Bob should have received 'a'.");
 
         until(start, 4).await;
 
