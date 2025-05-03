@@ -13,7 +13,8 @@ In an existing `cargo` project:
 cargo add clone-stream futures
 ```
 
-If you would like to install the latest `git` version instead of the release on [crates.io](crates.io):
+If you would like to install the latest `git` version instead of the latest official release on [crates.io](https://crates.io/crates/clone-stream), you can add this crate as a `git` dependency:
+
 
 ```bash
 cargo add --git https://github.com/wvhulle/clone-stream
