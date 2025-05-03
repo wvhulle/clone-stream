@@ -5,7 +5,7 @@ use futures::{
     StreamExt,
     future::{join_all, try_join_all},
 };
-use log::{info, trace};
+use log::trace;
 use tokio::{select, time::Instant};
 mod util;
 
