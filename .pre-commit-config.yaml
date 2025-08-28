@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: quick-benchmark
+        name: quick-benchmark
+        description: Run quick performance benchmark to detect regressions
+        entry: scripts/benchmark-check.sh
+        language: system
+        files: '(src/.*\.rs$|Cargo\.toml$)'
+        pass_filenames: false

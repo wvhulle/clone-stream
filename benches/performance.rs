@@ -114,6 +114,38 @@ fn stream_size_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
+fn quick_benchmark(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+
+    let mut group = c.benchmark_group("quick");
+    group.measurement_time(std::time::Duration::from_secs(1));
+    group.sample_size(10);
+
+    group.bench_function("10_clones_100_items", |b| {
+        b.to_async(&rt).iter(|| async {
+            let stream = stream::iter(0..100);
+            let template = stream.fork();
+
+            let tasks: Vec<_> = (0..10)
+                .map(|_| {
+                    let clone = template.clone();
+                    tokio::spawn(async move { clone.collect::<Vec<_>>().await })
+                })
+                .collect();
+
+            let results = join_all(tasks).await;
+            let lengths: Vec<_> = results.into_iter().map(|r| r.unwrap().len()).collect();
+            black_box(lengths)
+        });
+    });
+    group.finish();
+}
+
+criterion_group!(
+    quick_benches,
+    quick_benchmark
+);
+
 criterion_group!(
     benches,
     single_clone_benchmark,
@@ -121,4 +153,4 @@ criterion_group!(
     late_clone_benchmark,
     stream_size_benchmark
 );
-criterion_main!(benches);
+criterion_main!(benches, quick_benches);
