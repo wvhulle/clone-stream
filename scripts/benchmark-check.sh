@@ -32,14 +32,17 @@ if ! git diff --cached --quiet; then
         # Run benchmark on previous version and save baseline
         cargo bench --bench performance quick --quiet -- --save-baseline old > "$TEMP_DIR/old.out" 2>&1
         
-        # Return to original state
-        git checkout - -q
-        git stash pop -q
+        # Return to original state - this is now done above
+        # git checkout - -q
+        # git stash pop -q
         
         echo "🔍 Comparing performance..."
         
-        # Compare benchmarks and capture output
-        if cargo bench --bench performance quick --quiet -- --load-baseline old --save-baseline new > "$TEMP_DIR/comparison.out" 2>&1; then
+        # Compare benchmarks - run new version with old baseline to compare
+        git checkout - -q
+        git stash pop -q
+        
+        if cargo bench --bench performance quick --quiet -- --load-baseline old > "$TEMP_DIR/comparison.out" 2>&1; then
             echo "✅ No significant performance regression detected"
             
             # Show summary if there are improvements or minor changes
