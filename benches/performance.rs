@@ -1,3 +1,15 @@
+//! # Clone Stream Performance Benchmarks
+//!
+//! ## Running
+//! ```bash
+//! cargo bench
+//! ```
+//!
+//! ## Output
+//! - Statistical analysis with confidence intervals
+//! - HTML reports in `target/criterion/`
+//! - Performance regression detection
+
 use clone_stream::ForkStream;
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use futures::{StreamExt, future::join_all, stream};
