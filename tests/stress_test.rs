@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use clone_stream::CloneStream;
+use clone_stream::{CloneStream, ForkStream};
 use futures::{SinkExt, StreamExt, future::join_all, join, stream};
 use tokio::time::{Instant, sleep_until};
 
@@ -12,7 +12,7 @@ const N_ITEMS_SENT: usize = 100;
 async fn mass_send() {
     let (sender, receiver) = futures::channel::mpsc::unbounded::<usize>();
 
-    let template_clone: CloneStream<_> = receiver.into();
+    let template_clone: CloneStream<_> = receiver.fork();
 
     let expect_numbers = (0..N_ITEMS_SENT).collect::<Vec<_>>();
 
@@ -50,7 +50,7 @@ async fn mass_send() {
 async fn mass_send_interval() {
     let (mut sender, receiver) = futures::channel::mpsc::unbounded::<usize>();
 
-    let template_clone: CloneStream<_> = receiver.into();
+    let template_clone: CloneStream<_> = receiver.fork();
 
     let expect_numbers = (0..N_ITEMS_SENT).collect::<Vec<_>>();
 

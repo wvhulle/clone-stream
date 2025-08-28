@@ -1,0 +1,1 @@
+- use a timeout of max 10 seconds for the tests

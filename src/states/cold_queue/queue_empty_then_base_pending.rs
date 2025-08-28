@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    task::{Context, Poll, Waker},
-};
+use std::task::{Context, Poll, Waker};
 
 use futures::{Stream, StreamExt};
 use log::trace;
@@ -10,24 +7,18 @@ use super::queue_empty_then_base_ready::QueueEmptyThenBaseReady;
 use crate::{
     Fork,
     states::{
-        CloneState, NewStateAndPollResult,
+        CloneState, NewStateAndPollResult, StateHandler,
         hot_queue::unseen_queued_item_ready::UnseenQueuedItemReady,
     },
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct QueueEmptyThenBasePending {
     pub(crate) waker: Waker,
 }
 
-impl Display for QueueEmptyThenBasePending {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "QueueEmptyThenBasePending")
-    }
-}
-
-impl QueueEmptyThenBasePending {
-    pub(crate) fn handle<BaseStream>(
+impl StateHandler for QueueEmptyThenBasePending {
+    fn handle<BaseStream>(
         self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
@@ -35,7 +26,7 @@ impl QueueEmptyThenBasePending {
     where
         BaseStream: Stream<Item: Clone>,
     {
-        trace!("Currently in state 'QueueEmptyThenBasePending'");
+        trace!("Currently in state 'QueueEmptyThenBasePending");
         if fork.queue.is_empty() {
             trace!("Queue is empty");
             match fork

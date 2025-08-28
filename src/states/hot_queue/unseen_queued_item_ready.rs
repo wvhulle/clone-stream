@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    task::{Context, Poll, Waker},
-};
+use std::task::{Context, Poll, Waker};
 
 use futures::{Stream, StreamExt};
 
@@ -11,22 +8,16 @@ use super::{
 };
 use crate::{
     Fork,
-    states::{CloneState, NewStateAndPollResult},
+    states::{CloneState, NewStateAndPollResult, StateHandler},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct UnseenQueuedItemReady {
     pub(crate) unseen_ready_queue_item_index: usize,
 }
 
-impl Display for UnseenQueuedItemReady {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "UnseenQueuedItemReady")
-    }
-}
-
-impl UnseenQueuedItemReady {
-    pub(crate) fn handle<BaseStream>(
+impl StateHandler for UnseenQueuedItemReady {
+    fn handle<BaseStream>(
         self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
@@ -54,7 +45,7 @@ impl UnseenQueuedItemReady {
                     new_state: CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
                         unseen_ready_queue_item_index: newer_queue_item_index,
                     }),
-                    poll_result: Poll::Ready(item.clone()),
+                    poll_result: Poll::Ready(item),
                 }
             }
             None => {
