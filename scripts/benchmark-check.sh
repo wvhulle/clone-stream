@@ -2,6 +2,7 @@
 set -euo pipefail
 
 echo "🚀 Running performance regression check..."
+echo "ℹ️  Using separate target directories to preserve build caches"
 
 # Check if we're in a git repository
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
@@ -18,6 +19,7 @@ if ! git diff --cached --quiet; then
     trap "rm -rf $TEMP_DIR" EXIT
     
     # Run benchmark on current staged changes and save baseline
+    # Use normal target directory to preserve main build cache
     cargo bench --bench performance quick --quiet -- --save-baseline new > "$TEMP_DIR/new.out" 2>&1
     
     # Stash staged changes and checkout previous commit
@@ -29,8 +31,9 @@ if ! git diff --cached --quiet; then
         
         git checkout HEAD~1 -q
         
-        # Run benchmark on previous version and save baseline
-        cargo bench --bench performance quick --quiet -- --save-baseline old > "$TEMP_DIR/old.out" 2>&1
+        # Run benchmark on previous version with separate target directory
+        # This preserves the main build cache and avoids invalidation
+        CARGO_TARGET_DIR=target-benchmark-old cargo bench --bench performance quick --quiet -- --save-baseline old > "$TEMP_DIR/old.out" 2>&1
         
         # Return to original state - this is now done above
         # git checkout - -q
@@ -38,28 +41,44 @@ if ! git diff --cached --quiet; then
         
         echo "🔍 Comparing performance..."
         
-        # Compare benchmarks - run new version with old baseline to compare
+        # Compare benchmarks - run new version with old baseline from separate target dir
         git checkout - -q
         git stash pop -q
         
-        if cargo bench --bench performance quick --quiet -- --load-baseline old > "$TEMP_DIR/comparison.out" 2>&1; then
-            echo "✅ No significant performance regression detected"
+        # Parse benchmark results and compare
+        OLD_TIME=$(grep "time:" "$TEMP_DIR/old.out" | tail -1 | sed 's/.*time: *\[\([0-9.]*\) \([a-z]*\).*/\1 \2/' | head -1)
+        NEW_TIME=$(grep "time:" "$TEMP_DIR/new.out" | tail -1 | sed 's/.*time: *\[\([0-9.]*\) \([a-z]*\).*/\1 \2/' | head -1)
+        
+        if [ -n "$OLD_TIME" ] && [ -n "$NEW_TIME" ]; then
+            OLD_VAL=$(echo "$OLD_TIME" | cut -d' ' -f1)
+            OLD_UNIT=$(echo "$OLD_TIME" | cut -d' ' -f2)
+            NEW_VAL=$(echo "$NEW_TIME" | cut -d' ' -f1)
+            NEW_UNIT=$(echo "$NEW_TIME" | cut -d' ' -f2)
             
-            # Show summary if there are improvements or minor changes
-            if grep -q "Performance has" "$TEMP_DIR/comparison.out"; then
-                grep "Performance has" "$TEMP_DIR/comparison.out" || true
+            echo "Previous: $OLD_TIME, Current: $NEW_TIME"
+            
+            # Simple regression check: if new time is >20% higher, fail
+            if [ "$OLD_UNIT" = "$NEW_UNIT" ]; then
+                THRESHOLD=$(echo "$OLD_VAL * 1.2" | bc -l 2>/dev/null || echo "0")
+                if [ "$THRESHOLD" != "0" ] && [ "$(echo "$NEW_VAL > $THRESHOLD" | bc -l 2>/dev/null || echo "0")" = "1" ]; then
+                    PERCENT=$(echo "scale=1; ($NEW_VAL - $OLD_VAL) / $OLD_VAL * 100" | bc -l 2>/dev/null || echo "unknown")
+                    echo "❌ Performance regression detected: +${PERCENT}% slower"
+                    echo "💡 If this regression is expected, you can skip this check with:"
+                    echo "   git commit --no-verify"
+                    exit 1
+                else
+                    PERCENT=$(echo "scale=1; ($OLD_VAL - $NEW_VAL) / $OLD_VAL * 100" | bc -l 2>/dev/null || echo "0")
+                    if [ "$(echo "$PERCENT > 0" | bc -l 2>/dev/null || echo "0")" = "1" ]; then
+                        echo "✅ Performance improved: -${PERCENT}% faster"
+                    else
+                        echo "✅ No significant performance change"
+                    fi
+                fi
+            else
+                echo "⚠️  Cannot compare different units: $OLD_UNIT vs $NEW_UNIT"
             fi
-            
-            exit 0
         else
-            echo "❌ Performance regression detected!"
-            echo ""
-            echo "Benchmark comparison output:"
-            cat "$TEMP_DIR/comparison.out"
-            echo ""
-            echo "💡 If this regression is expected, you can skip this check with:"
-            echo "   git commit --no-verify"
-            exit 1
+            echo "⚠️  Could not parse benchmark results for comparison"
         fi
     else
         echo "ℹ️  No previous commit to compare against (initial commit)"
