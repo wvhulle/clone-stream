@@ -9,7 +9,7 @@ use std::{
 use futures::Stream;
 use log::trace;
 
-use crate::states::{CloneState, NewStateAndPollResult};
+use crate::states::{CloneState, NewStateAndPollResult, StateHandler};
 
 pub(crate) struct Fork<BaseStream>
 where
@@ -47,24 +47,7 @@ where
         let NewStateAndPollResult {
             poll_result,
             new_state,
-        } = match current_state {
-            CloneState::NeverPolled(never_polled) => never_polled.handle(clone_waker, self),
-            CloneState::QueueEmptyThenBaseReady(queue_empty_base_pending) => {
-                queue_empty_base_pending.handle(clone_waker, self)
-            }
-            CloneState::QueueEmptyThenBasePending(queue_empty_base_ready) => {
-                queue_empty_base_ready.handle(clone_waker, self)
-            }
-            CloneState::NoUnseenQueuedThenBasePending(ready_from_queue) => {
-                ready_from_queue.handle(clone_waker, self)
-            }
-            CloneState::NoUnseenQueuedThenBaseReady(first_poll_pending_queue_empty) => {
-                first_poll_pending_queue_empty.handle(clone_waker, self)
-            }
-            CloneState::UnseenQueuedItemReady(first_poll_pending_queue_non_empty) => {
-                first_poll_pending_queue_non_empty.handle(clone_waker, self)
-            }
-        };
+        } = current_state.handle(clone_waker, self);
 
         trace!("Inserting clone {clone_id} back into the fork with state: {new_state:?}.");
         self.clones.insert(clone_id, new_state);

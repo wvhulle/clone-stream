@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    task::{Context, Poll, Waker},
-};
+use std::task::{Context, Poll, Waker};
 
 use futures::{Stream, StreamExt};
 use log::trace;
@@ -13,22 +10,17 @@ use super::{
 use crate::{
     Fork,
     states::{
-        CloneState, NewStateAndPollResult,
+        CloneState, NewStateAndPollResult, StateHandler,
         hot_queue::no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
     },
 };
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub(crate) struct NeverPolled;
 
-impl Display for NeverPolled {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NeverPolled")
-    }
-}
 
-impl NeverPolled {
-    pub(crate) fn handle<BaseStream>(
+impl StateHandler for NeverPolled {
+    fn handle<BaseStream>(
         self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
