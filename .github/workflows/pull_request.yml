@@ -26,3 +26,5 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Fix formatting and simple mistakes
         uses: MarcoIeni/cargo-assist@v0.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
