@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    task::{Context, Poll, Waker},
-};
+use std::task::{Context, Poll, Waker};
 
 use futures::{Stream, StreamExt};
 use log::trace;
@@ -9,20 +6,14 @@ use log::trace;
 use super::queue_empty_then_base_pending::QueueEmptyThenBasePending;
 use crate::{
     Fork,
-    states::{CloneState, NewStateAndPollResult},
+    states::{CloneState, NewStateAndPollResult, StateHandler},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct QueueEmptyThenBaseReady;
 
-impl Display for QueueEmptyThenBaseReady {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "QueueEmptyThenBaseReady")
-    }
-}
-
-impl QueueEmptyThenBaseReady {
-    pub(crate) fn handle<BaseStream>(
+impl StateHandler for QueueEmptyThenBaseReady {
+    fn handle<BaseStream>(
         self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,

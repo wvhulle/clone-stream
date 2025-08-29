@@ -21,16 +21,6 @@ pub use clone::CloneStream;
 use fork::Fork;
 use futures::Stream;
 
-impl<BaseStream> From<BaseStream> for CloneStream<BaseStream>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    /// Forks the stream into a new stream that can be cloned.
-    fn from(base_stream: BaseStream) -> CloneStream<BaseStream> {
-        CloneStream::from(Fork::new(base_stream))
-    }
-}
-
 /// A trait that turns an input [`Stream`] with [`Stream::Item`]s that implement
 /// [`Clone`] into a stream that is [`Clone`]. The output stream yields items of
 /// the same type as the input stream.
@@ -52,3 +42,13 @@ pub trait ForkStream: Stream<Item: Clone> + Sized {
 }
 
 impl<BaseStream> ForkStream for BaseStream where BaseStream: Stream<Item: Clone> {}
+
+impl<BaseStream> From<BaseStream> for CloneStream<BaseStream>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    /// Forks the stream into a new stream that can be cloned.
+    fn from(base_stream: BaseStream) -> CloneStream<BaseStream> {
+        CloneStream::from(Fork::new(base_stream))
+    }
+}
