@@ -17,8 +17,8 @@ use log::trace;
 pub mod cold_queue;
 pub mod hot_queue;
 
-use futures::Stream;
 use crate::Fork;
+use futures::Stream;
 
 /// Trait for handling state transitions in the clone stream state machine
 pub(crate) trait StateHandler {

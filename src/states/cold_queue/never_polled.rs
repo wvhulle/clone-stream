@@ -18,7 +18,6 @@ use crate::{
 #[derive(Default, Clone, Debug)]
 pub(crate) struct NeverPolled;
 
-
 impl StateHandler for NeverPolled {
     fn handle<BaseStream>(
         self,
