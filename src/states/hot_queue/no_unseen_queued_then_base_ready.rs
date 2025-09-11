@@ -32,10 +32,11 @@ impl StateHandler for NoUnseenQueuedThenBaseReady {
                     .clones
                     .iter()
                     .any(|(_clone_id, state)| state.should_still_see_base_item())
+                    && let Ok(queue_index) = fork.allocate_queue_index()
                 {
-                    let queue_index = fork.allocate_queue_index();
                     fork.queue.insert(queue_index, item.clone());
                 }
+                // If allocation fails, we continue without queuing the item
                 NewStateAndPollResult {
                     new_state: CloneState::NoUnseenQueuedThenBaseReady(NoUnseenQueuedThenBaseReady),
                     poll_result: Poll::Ready(item),

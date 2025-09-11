@@ -1,70 +1,66 @@
-//! # Lazily clone streams with `clone-stream`
+//! # Clone streams with `clone-stream`
 //!
-//! This module provides a way to fork a stream into multiple streams that can
-//! be cloned and used independently.
+//! Turn any [`Stream`] into a cloneable stream where each clone receives all items
+//! independently.
 //!
-//! The [`CloneStream`] struct implements the
-//! [`Stream`] trait and allows for cloning of the stream, while the [`Fork`]
-//! struct manages the underlying "base" (or input) stream and the other sibling
-//! stream clones.
+//! The [`CloneStream`] struct implements [`Clone`] + [`Stream`], allowing you to
+//! create multiple independent consumers of the same data. The [`ForkStream`] trait
+//! provides the entry point for converting regular streams.
 //!
-//! The [`ForkStream`] trait is implemented for any stream that yields items
-//! that implement the `Clone` trait. This allows for easy conversion of a
-//! stream into a [`CloneStream`]. Just import this trait if you want to use the
-//! functionality in this library.
+//! # Quick Start
+//!
+//! ```rust
+//! use clone_stream::ForkStream;
+//! use futures::{stream, StreamExt};
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//! let stream = stream::iter(vec![1, 2, 3]).fork();
+//! let mut clone1 = stream.clone();
+//! let mut clone2 = stream.clone();
+//! // Both clones receive all items independently
+//! # }
+//! ```
 mod clone;
+mod error;
 mod fork;
-
 mod states;
 
 pub use clone::CloneStream;
-pub use fork::ForkConfig;
+pub use error::{CloneStreamError, Result};
 use fork::Fork;
+pub use fork::ForkConfig;
 use futures::Stream;
 
-/// A trait that turns an input [`Stream`] with [`Stream::Item`]s that implement
-/// [`Clone`] into a stream that is [`Clone`]. The output stream yields items of
-/// the same type as the input stream.
+/// Extension trait to make any [`Stream`] cloneable.
 pub trait ForkStream: Stream<Item: Clone> + Sized {
-    /// Forks the stream into a new stream that can be cloned.
-    ///
-    /// # Example
+    /// Creates a cloneable version of this stream.
     ///
     /// ```rust
     /// use clone_stream::ForkStream;
-    /// use futures::{FutureExt, StreamExt, stream};
-    /// let non_clone_stream = stream::iter(0..10);
-    /// let clone_stream = non_clone_stream.fork();
-    /// let mut cloned_stream = clone_stream.clone();
+    /// use futures::{stream, StreamExt};
+    /// 
+    /// let stream = stream::iter(0..3).fork();
+    /// let mut clone = stream.clone();
     /// ```
     fn fork(self) -> CloneStream<Self> {
         CloneStream::from(Fork::new(self))
     }
 
-    /// Forks the stream into a new stream that can be cloned with custom buffer limits.
-    ///
-    /// This allows you to control the maximum queue size before a panic occurs,
-    /// providing better control over memory usage in streaming applications.
+    /// Creates a cloneable stream with custom limits.
     ///
     /// # Arguments
-    ///
-    /// * `max_queue_size` - Maximum number of items that can be queued before panic
-    /// * `max_clone_count` - Maximum number of clones that can be created before panic
+    /// * `max_queue_size` - Max items queued before panic
+    /// * `max_clone_count` - Max clones before panic
     ///
     /// # Panics
-    ///
-    /// This method will panic if:
-    /// - The queue size exceeds `max_queue_size`
-    /// - The number of clones exceeds `max_clone_count`
-    ///
-    /// # Example
+    /// When limits are exceeded during operation.
     ///
     /// ```rust
     /// use clone_stream::ForkStream;
-    /// use futures::{FutureExt, StreamExt, stream};
-    /// let non_clone_stream = stream::iter(0..10);
-    /// let clone_stream = non_clone_stream.fork_with_limits(1000, 10);
-    /// let mut cloned_stream = clone_stream.clone();
+    /// use futures::stream;
+    /// 
+    /// let stream = stream::iter(0..3).fork_with_limits(100, 5);
     /// ```
     fn fork_with_limits(self, max_queue_size: usize, max_clone_count: usize) -> CloneStream<Self> {
         let config = ForkConfig {
@@ -81,7 +77,7 @@ impl<BaseStream> From<BaseStream> for CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    /// Forks the stream into a new stream that can be cloned.
+    /// Converts a stream into a cloneable stream.
     fn from(base_stream: BaseStream) -> CloneStream<BaseStream> {
         CloneStream::from(Fork::new(base_stream))
     }

@@ -1,6 +1,6 @@
 use core::ops::Deref;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     pin::Pin,
     sync::Arc,
     task::{Poll, Wake, Waker},
@@ -9,7 +9,10 @@ use std::{
 use futures::Stream;
 use log::trace;
 
-use crate::states::{CloneState, NewStateAndPollResult, StateHandler};
+use crate::{
+    error::{CloneStreamError, Result},
+    states::{CloneState, NewStateAndPollResult, StateHandler},
+};
 
 /// Maximum number of clones that can be registered simultaneously.
 /// This prevents overflow of clone indices and limits memory usage.
@@ -49,7 +52,8 @@ where
     pub(crate) base_stream: Pin<Box<BaseStream>>,
     pub(crate) queue: BTreeMap<usize, Option<BaseStream::Item>>,
     pub(crate) clones: BTreeMap<usize, CloneState>,
-    next_clone_index: usize,
+    /// Pool of available clone indices that can be reused
+    available_clone_indices: BTreeSet<usize>,
     pub(crate) next_queue_index: usize,
     config: ForkConfig,
 }
@@ -68,7 +72,7 @@ where
             clones: BTreeMap::default(),
             queue: BTreeMap::new(),
             next_queue_index: 0,
-            next_clone_index: 0,
+            available_clone_indices: BTreeSet::new(),
             config,
         }
     }
@@ -105,45 +109,63 @@ where
         Waker::from(Arc::new(SleepWaker { wakers }))
     }
 
-    pub(crate) fn register(&mut self) -> usize {
-        // Check for overflow before incrementing
-        assert!(
-            self.next_clone_index < self.config.max_clone_count,
-            "Maximum number of clones ({}) exceeded", self.config.max_clone_count
-        );
+    /// Register a new clone and return its ID
+    pub(crate) fn register(&mut self) -> Result<usize> {
+        // First, try to reuse the lowest available index for better cache locality
+        if let Some(reused_id) = self.available_clone_indices.pop_first() {
+            trace!("Registering clone {reused_id} (reused index).");
+            self.clones.insert(reused_id, CloneState::default());
+            return Ok(reused_id);
+        }
 
-        let clone_id = self.next_clone_index;
+        // Derive the next new index by finding the lowest unused index
+        let next_clone_index = (0..self.config.max_clone_count)
+            .find(|&id| !self.clones.contains_key(&id))
+            .ok_or(CloneStreamError::MaxClonesExceeded {
+                current_count: self.clones.len(),
+                max_allowed: self.config.max_clone_count,
+            })?;
 
-        trace!("Registering clone {clone_id}.");
-        self.clones.insert(clone_id, CloneState::default());
-
-        self.next_clone_index += 1;
-        clone_id
+        trace!("Registering clone {next_clone_index} (new index).");
+        self.clones.insert(next_clone_index, CloneState::default());
+        Ok(next_clone_index)
     }
 
     /// Allocates a new queue index with overflow protection.
     /// This method should be called instead of directly incrementing `next_queue_index`.
-    pub(crate) fn allocate_queue_index(&mut self) -> usize {
+    pub(crate) fn allocate_queue_index(&mut self) -> Result<usize> {
         // If we're approaching overflow and the queue is empty, reset to 0
         // This helps with long-running applications that create many temporary items
-        if self.next_queue_index >= self.config.max_queue_size - QUEUE_RESET_THRESHOLD && self.queue.is_empty() {
+        if self.next_queue_index >= self.config.max_queue_size - QUEUE_RESET_THRESHOLD
+            && self.queue.is_empty()
+        {
             self.next_queue_index = 0;
         }
 
         // Check for overflow before incrementing
-        assert!(
-            self.next_queue_index < self.config.max_queue_size,
-            "Queue index overflow: maximum queue size ({}) exceeded", self.config.max_queue_size
-        );
+        if self.next_queue_index >= self.config.max_queue_size {
+            return Err(CloneStreamError::MaxQueueSizeExceeded {
+                max_allowed: self.config.max_queue_size,
+                current_size: self.queue.len(),
+            });
+        }
 
         let allocated_index = self.next_queue_index;
         self.next_queue_index += 1;
-        allocated_index
+        Ok(allocated_index)
     }
 
     pub(crate) fn unregister(&mut self, clone_id: usize) {
         trace!("Unregistering clone {clone_id}.");
-        self.clones.remove(&clone_id).unwrap();
+        if self.clones.remove(&clone_id).is_none() {
+            log::warn!("Attempted to unregister clone {clone_id} that was not registered");
+            return;
+        }
+
+        // Insert the index back to the available pool - BTreeSet handles ordering automatically
+        if !self.available_clone_indices.insert(clone_id) {
+            log::warn!("Clone index {clone_id} was already in available pool");
+        }
 
         self.queue.retain(|item_index, _| {
             self.clones

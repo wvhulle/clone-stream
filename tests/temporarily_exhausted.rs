@@ -26,9 +26,8 @@ impl Stream for TemporarilyExhaustedStream {
         let count = self.counter.fetch_add(1, Ordering::Relaxed);
         match count {
             0 => Poll::Ready(Some(1)),
-            1 => Poll::Ready(None),
             2 => Poll::Ready(Some(2)),
-            _ => Poll::Ready(None),
+            _ => Poll::Ready(None), // Covers both temporarily exhausted (1) and permanently exhausted (3+)
         }
     }
 }

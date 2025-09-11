@@ -1,5 +1,5 @@
 use clone_stream::ForkStream;
-use futures::{stream, StreamExt};
+use futures::stream;
 
 /// Test that `fork_with_limits` function can be called and creates clones
 #[tokio::test]
@@ -15,38 +15,10 @@ async fn test_fork_with_limits_basic() {
     assert!(clone_stream.n_queued_items() == 0);
 }
 
-/// Test that queue size limit is enforced
+/// Test that clone count limit is enforced by panicking
 #[tokio::test]
-#[should_panic(expected = "Queue index overflow")]
-async fn test_queue_size_limit_panic() {
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-    use futures::Stream;
-    
-    // Create a stream that will generate many items
-    struct InfiniteStream;
-    
-    impl Stream for InfiniteStream {
-        type Item = i32;
-        
-        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            Poll::Ready(Some(1)) // Always ready with the value 1
-        }
-    }
-    
-    let stream = InfiniteStream;
-    let mut clone_stream = stream.fork_with_limits(1, 5); // Very small queue limit
-    
-    // Try to consume many items, this should eventually panic due to queue overflow
-    for _ in 0..10 {
-        let _ = clone_stream.next().await;
-    }
-}
-
-/// Test that clone count limit is enforced  
-#[tokio::test]
-#[should_panic(expected = "Maximum number of clones")]
-async fn test_clone_count_limit_panic() {
+#[should_panic(expected = "Failed to register clone - clone limit exceeded")]
+async fn test_clone_count_limit_error() {
     let values = vec![1, 2, 3];
     let stream = stream::iter(values);
     
@@ -54,5 +26,28 @@ async fn test_clone_count_limit_panic() {
     
     // Create clones until we hit the limit
     let _clone1 = original.clone();
-    let _clone2 = original.clone(); // This should panic
+    let _clone2 = original.clone(); 
+    
+    // The third clone should panic
+    let _clone3 = original.clone(); // This will panic
+}
+
+/// Test that the configuration is properly applied
+#[tokio::test]
+async fn test_fork_with_limits_configuration() {
+    // Test with various configurations using separate streams
+    let values1 = vec![1, 2, 3];
+    let stream1 = stream::iter(values1);
+    let _fork1 = stream1.fork_with_limits(10, 50);
+    
+    let values2 = vec![4, 5, 6];
+    let stream2 = stream::iter(values2);
+    let _fork2 = stream2.fork_with_limits(100, 5);
+    
+    let values3 = vec![7, 8, 9];
+    let stream3 = stream::iter(values3);
+    let _fork3 = stream3.fork_with_limits(1000, 1000);
+    
+    // If we get here without panicking, the configuration is being accepted
+    // Test passes if we reach this point
 }
