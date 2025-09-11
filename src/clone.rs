@@ -128,10 +128,6 @@ where
     /// 1. The underlying base stream is terminated
     /// 2. This clone has no remaining queued items to consume
     fn is_terminated(&self) -> bool {
-        if self.id == usize::MAX {
-            return true;
-        }
-
         let fork = self.fork.read().unwrap();
         fork.is_terminated() && fork.remaining_queued_items(self.id) == 0
     }

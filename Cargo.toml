@@ -1,6 +1,6 @@
 [package]
 authors = ["Willem Vanhulle <willemvanhulle@protonmail.com>"]
-categories = ["asynchronous", "stream", "utilities"]
+categories = ["asynchronous", "concurrency", "data-structures"]
 description = "Turn any Stream into a cloneable stream where each clone receives all items independently."
 edition = "2024"
 keywords = ["future", "combinator", "stream", "clone", "async"]
@@ -9,7 +9,7 @@ name = "clone-stream"
 readme = "README.md"
 repository = "https://github.com/wvhulle/clone-stream"
 rust-version = "1.89.0"
-version = "0.3.0"
+version = "0.3.1"
 
 
 [lints.clippy]
