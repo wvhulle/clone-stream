@@ -164,6 +164,11 @@ where
     /// yet consumed by this particular clone. Other clones may have
     /// different queue lengths depending on their consumption patterns.
     ///
+    /// # Panics
+    ///
+    /// Panics if the internal fork lock is poisoned. This should not happen
+    /// under normal circumstances.
+    ///
     /// # Examples
     ///
     /// ```rust
@@ -176,10 +181,6 @@ where
     /// ```
     #[must_use]
     pub fn n_queued_items(&self) -> usize {
-        if self.id == usize::MAX {
-            return 0;
-        }
-
         trace!("Getting the number of queued items for clone {}.", self.id);
         self.fork.read().unwrap().remaining_queued_items(self.id)
     }

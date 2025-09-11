@@ -15,13 +15,9 @@ use crate::{
 };
 
 /// Maximum number of clones that can be registered simultaneously.
-/// This prevents overflow of clone indices and limits memory usage.
-/// 65536 clones should be more than sufficient for any practical use case.
 const MAX_CLONE_COUNT: usize = 65536;
 
 /// Maximum number of items that can be queued simultaneously.
-/// This prevents overflow of queue indices and limits memory usage.
-/// 1MB queue indices should handle most streaming scenarios comfortably.
 const MAX_QUEUE_SIZE: usize = 1024 * 1024;
 
 /// Configuration for Fork behavior.
@@ -49,10 +45,8 @@ where
     pub(crate) base_stream: Pin<Box<BaseStream>>,
     pub(crate) queue: BTreeMap<usize, Option<BaseStream::Item>>,
     pub(crate) clones: BTreeMap<usize, CloneState>,
-    /// Pool of available clone indices that can be reused
     available_clone_indices: BTreeSet<usize>,
     pub(crate) next_queue_index: usize,
-    /// Index of the latest cached item, used for capacity calculation
     latest_cached_item_index: Option<usize>,
     config: ForkConfig,
 }
@@ -111,7 +105,6 @@ where
 
     /// Register a new clone and return its ID
     pub(crate) fn register(&mut self) -> Result<usize> {
-        // First, try to reuse the lowest available index for better cache locality
         if let Some(reused_id) = self.available_clone_indices.pop_first() {
             trace!("Registering clone {reused_id} (reused index).");
             self.clones.insert(reused_id, CloneState::default());
@@ -132,42 +125,11 @@ where
     }
 
     /// Calculates the remaining capacity in the queue.
-    /// This is the number of additional items that can be cached before hitting
-    /// the limit.
     fn queue_capacity(&self) -> usize {
-        if let Some(latest_index) = self.latest_cached_item_index {
-            // Find the oldest item that any clone still needs to see
-            let oldest_needed_index = self
-                .clones
-                .values()
-                .filter_map(|state| {
-                    // Find the smallest index this clone still needs to see
-                    self.queue
-                        .keys()
-                        .find(|&&index| state.should_still_see_item(index))
-                        .copied()
-                })
-                .min()
-                .unwrap_or(latest_index + 1);
-
-            // Calculate the range of indices currently in use
-            let indices_in_use = if latest_index >= oldest_needed_index {
-                latest_index - oldest_needed_index + 1
-            } else {
-                // Handle wrap-around case
-                (self.config.max_queue_size - oldest_needed_index) + latest_index + 1
-            };
-
-            self.config.max_queue_size.saturating_sub(indices_in_use)
-        } else {
-            // No items cached yet, full capacity available
-            self.config.max_queue_size
-        }
+        self.config.max_queue_size.saturating_sub(self.queue.len())
     }
 
     /// Allocates a new queue index with ring-buffer wrapping.
-    /// Wraps around to 0 when reaching `max_queue_size` and returns an error
-    /// if there's no remaining capacity.
     pub(crate) fn allocate_queue_index(&mut self) -> Result<usize> {
         // Check if we have capacity for more items
         if self.queue_capacity() == 0 {
@@ -177,11 +139,9 @@ where
             });
         }
 
-        // Get the current index and advance the next index with wrapping
         let candidate_index = self.next_queue_index;
         self.next_queue_index = (self.next_queue_index + 1) % self.config.max_queue_size;
 
-        // Update the latest cached item index
         self.latest_cached_item_index = Some(candidate_index);
 
         Ok(candidate_index)
