@@ -18,6 +18,7 @@ mod fork;
 mod states;
 
 pub use clone::CloneStream;
+pub use fork::ForkConfig;
 use fork::Fork;
 use futures::Stream;
 
@@ -38,6 +39,39 @@ pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// ```
     fn fork(self) -> CloneStream<Self> {
         CloneStream::from(Fork::new(self))
+    }
+
+    /// Forks the stream into a new stream that can be cloned with custom buffer limits.
+    ///
+    /// This allows you to control the maximum queue size before a panic occurs,
+    /// providing better control over memory usage in streaming applications.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_queue_size` - Maximum number of items that can be queued before panic
+    /// * `max_clone_count` - Maximum number of clones that can be created before panic
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if:
+    /// - The queue size exceeds `max_queue_size`
+    /// - The number of clones exceeds `max_clone_count`
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use clone_stream::ForkStream;
+    /// use futures::{FutureExt, StreamExt, stream};
+    /// let non_clone_stream = stream::iter(0..10);
+    /// let clone_stream = non_clone_stream.fork_with_limits(1000, 10);
+    /// let mut cloned_stream = clone_stream.clone();
+    /// ```
+    fn fork_with_limits(self, max_queue_size: usize, max_clone_count: usize) -> CloneStream<Self> {
+        let config = ForkConfig {
+            max_clone_count,
+            max_queue_size,
+        };
+        CloneStream::from(Fork::with_config(self, config))
     }
 }
 

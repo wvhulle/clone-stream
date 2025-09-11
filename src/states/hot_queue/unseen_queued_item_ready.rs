@@ -59,8 +59,8 @@ impl StateHandler for UnseenQueuedItemReady {
                             .iter()
                             .any(|(_clone_id, state)| state.should_still_see_base_item())
                         {
-                            fork.queue.insert(fork.next_queue_index, item.clone());
-                            fork.next_queue_index += 1;
+                            let queue_index = fork.allocate_queue_index();
+                            fork.queue.insert(queue_index, item.clone());
                         }
                         NewStateAndPollResult {
                             new_state: CloneState::NoUnseenQueuedThenBaseReady(
