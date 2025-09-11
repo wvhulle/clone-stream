@@ -17,8 +17,9 @@ use log::trace;
 pub mod cold_queue;
 pub mod hot_queue;
 
-use crate::Fork;
 use futures::Stream;
+
+use crate::Fork;
 
 /// Trait for handling state transitions in the clone stream state machine
 pub(crate) trait StateHandler {
@@ -59,40 +60,40 @@ impl CloneState {
             "Checking if state {self:?} should still see queue item with index {queue_item_index}"
         );
         match self {
-            CloneState::NeverPolled(_never_polled) => false,
-            CloneState::QueueEmptyThenBaseReady(_queue_empty_then_base_ready) => false,
-            CloneState::QueueEmptyThenBasePending(_queue_empty_then_base_pending) => true,
+            CloneState::QueueEmptyThenBasePending(_) => true,
             CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
                 no_unseen_queued_then_base_pending.most_recent_queue_item_index < queue_item_index
             }
-            CloneState::NoUnseenQueuedThenBaseReady(_no_unseen_queued_then_base_ready) => false,
-            CloneState::UnseenQueuedItemReady(_unseen_queued_item_ready) => false,
+            CloneState::NeverPolled(_)
+            | CloneState::QueueEmptyThenBaseReady(_)
+            | CloneState::NoUnseenQueuedThenBaseReady(_)
+            | CloneState::UnseenQueuedItemReady(_) => false,
         }
     }
 
     pub(crate) fn should_still_see_base_item(&self) -> bool {
         match self {
-            CloneState::NeverPolled(_never_polled) => false,
-            CloneState::QueueEmptyThenBaseReady(_queue_empty_then_base_ready) => false,
-            CloneState::QueueEmptyThenBasePending(_queue_empty_then_base_pending) => true,
-            CloneState::NoUnseenQueuedThenBasePending(_no_unseen_queued_then_base_pending) => true,
-            CloneState::NoUnseenQueuedThenBaseReady(_no_unseen_queued_then_base_ready) => false,
-            CloneState::UnseenQueuedItemReady(_unseen_queued_item_ready) => false,
+            CloneState::QueueEmptyThenBasePending(_)
+            | CloneState::NoUnseenQueuedThenBasePending(_) => true,
+            CloneState::NeverPolled(_)
+            | CloneState::QueueEmptyThenBaseReady(_)
+            | CloneState::NoUnseenQueuedThenBaseReady(_)
+            | CloneState::UnseenQueuedItemReady(_) => false,
         }
     }
 
     pub(crate) fn waker(&self) -> Option<Waker> {
         match self {
-            CloneState::NeverPolled(_never_polled) => None,
-            CloneState::QueueEmptyThenBaseReady(_queue_empty_then_base_ready) => None,
             CloneState::QueueEmptyThenBasePending(queue_empty_then_base_pending) => {
                 Some(queue_empty_then_base_pending.waker.clone())
             }
             CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
                 Some(no_unseen_queued_then_base_pending.waker.clone())
             }
-            CloneState::NoUnseenQueuedThenBaseReady(_no_unseen_queued_then_base_ready) => None,
-            CloneState::UnseenQueuedItemReady(_unseen_queued_item_ready) => None,
+            CloneState::NeverPolled(_)
+            | CloneState::QueueEmptyThenBaseReady(_)
+            | CloneState::NoUnseenQueuedThenBaseReady(_)
+            | CloneState::UnseenQueuedItemReady(_) => None,
         }
     }
 }

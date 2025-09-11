@@ -1,32 +1,19 @@
-# Clone-stream
+# Clone-Stream
 
-Convert any stream into a stream that is `Clone`. The only requirement is that the item type of the base-stream implements `Clone`.
+[![Crates.io](https://img.shields.io/crates/v/clone-stream.svg)](https://crates.io/crates/clone-stream)
+[![Documentation](https://docs.rs/clone-stream/badge.svg)](https://docs.rs/clone-stream)
 
-
-_Remark: A stream is an implementor of the `Stream` trait from the `futures` crate (also called an async iterator)._
+Turn any `Stream` into a cloneable stream where each clone receives all items independently.
 
 ## Installation
 
-In an existing `cargo` project:
+Add to your `Cargo.toml`:
 
-```bash
-cargo add clone-stream futures
+```toml
+[dependencies]
+clone-stream = "0.3"
 ```
 
-If you would like to install the latest `git` version instead of the latest official release on [crates.io](https://crates.io/crates/clone-stream), you can add this crate as a `git` dependency:
+## Documentation
 
-
-```bash
-cargo add --git https://github.com/wvhulle/clone-stream
-```
-
-## Usage
-
-See the [docs](https://docs.rs/clone-stream/latest/clone_stream/) for the API documentation.
-
-
-## How does it work?
-
-The Rust integration tests in [tests](./tests) show some examples.
-
-See [my blog](https://willemvanhulle.tech/blog) for more technical information.
+See the [API documentation](https://docs.rs/clone-stream) for examples and usage details.

@@ -1,6 +1,6 @@
 use core::ops::Deref;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     pin::Pin,
     sync::Arc,
     task::{Poll, Wake, Waker},
@@ -9,7 +9,34 @@ use std::{
 use futures::Stream;
 use log::trace;
 
-use crate::states::{CloneState, NewStateAndPollResult, StateHandler};
+use crate::{
+    error::{CloneStreamError, Result},
+    states::{CloneState, NewStateAndPollResult, StateHandler},
+};
+
+/// Maximum number of clones that can be registered simultaneously.
+const MAX_CLONE_COUNT: usize = 65536;
+
+/// Maximum number of items that can be queued simultaneously.
+const MAX_QUEUE_SIZE: usize = 1024 * 1024;
+
+/// Configuration for Fork behavior.
+#[derive(Debug, Clone, Copy)]
+pub struct ForkConfig {
+    /// Maximum number of clones allowed.
+    pub max_clone_count: usize,
+    /// Maximum queue size before panic.
+    pub max_queue_size: usize,
+}
+
+impl Default for ForkConfig {
+    fn default() -> Self {
+        Self {
+            max_clone_count: MAX_CLONE_COUNT,
+            max_queue_size: MAX_QUEUE_SIZE,
+        }
+    }
+}
 
 pub(crate) struct Fork<BaseStream>
 where
@@ -18,8 +45,10 @@ where
     pub(crate) base_stream: Pin<Box<BaseStream>>,
     pub(crate) queue: BTreeMap<usize, Option<BaseStream::Item>>,
     pub(crate) clones: BTreeMap<usize, CloneState>,
-    next_clone_index: usize,
+    available_clone_indices: BTreeSet<usize>,
     pub(crate) next_queue_index: usize,
+    latest_cached_item_index: Option<usize>,
+    config: ForkConfig,
 }
 
 impl<BaseStream> Fork<BaseStream>
@@ -27,12 +56,18 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     pub(crate) fn new(base_stream: BaseStream) -> Self {
+        Self::with_config(base_stream, ForkConfig::default())
+    }
+
+    pub(crate) fn with_config(base_stream: BaseStream, config: ForkConfig) -> Self {
         Self {
             base_stream: Box::pin(base_stream),
             clones: BTreeMap::default(),
             queue: BTreeMap::new(),
             next_queue_index: 0,
-            next_clone_index: 0,
+            latest_cached_item_index: None,
+            available_clone_indices: BTreeSet::new(),
+            config,
         }
     }
 
@@ -65,22 +100,64 @@ where
 
         trace!("Found {} wakers.", wakers.len());
 
-        Waker::from(Arc::new(SleepWaker { wakers }))
+        Waker::from(Arc::new(MultiWaker { wakers }))
     }
 
-    pub(crate) fn register(&mut self) -> usize {
-        let min_available = self.next_clone_index;
+    /// Register a new clone and return its ID
+    pub(crate) fn register(&mut self) -> Result<usize> {
+        if let Some(reused_id) = self.available_clone_indices.pop_first() {
+            trace!("Registering clone {reused_id} (reused index).");
+            self.clones.insert(reused_id, CloneState::default());
+            return Ok(reused_id);
+        }
 
-        trace!("Registering clone {min_available}.");
-        self.clones.insert(min_available, CloneState::default());
+        // Derive the next new index by finding the lowest unused index
+        let next_clone_index = (0..self.config.max_clone_count)
+            .find(|&id| !self.clones.contains_key(&id))
+            .ok_or(CloneStreamError::MaxClonesExceeded {
+                current_count: self.clones.len(),
+                max_allowed: self.config.max_clone_count,
+            })?;
 
-        self.next_clone_index += 1;
-        min_available
+        trace!("Registering clone {next_clone_index} (new index).");
+        self.clones.insert(next_clone_index, CloneState::default());
+        Ok(next_clone_index)
     }
 
+    /// Calculates the remaining capacity in the queue.
+    fn queue_capacity(&self) -> usize {
+        self.config.max_queue_size.saturating_sub(self.queue.len())
+    }
+
+    /// Allocates a new queue index with ring-buffer wrapping.
+    pub(crate) fn allocate_queue_index(&mut self) -> Result<usize> {
+        // Check if we have capacity for more items
+        if self.queue_capacity() == 0 {
+            return Err(CloneStreamError::MaxQueueSizeExceeded {
+                max_allowed: self.config.max_queue_size,
+                current_size: self.queue.len(),
+            });
+        }
+
+        let candidate_index = self.next_queue_index;
+        self.next_queue_index = (self.next_queue_index + 1) % self.config.max_queue_size;
+
+        self.latest_cached_item_index = Some(candidate_index);
+
+        Ok(candidate_index)
+    }
     pub(crate) fn unregister(&mut self, clone_id: usize) {
         trace!("Unregistering clone {clone_id}.");
-        self.clones.remove(&clone_id).unwrap();
+        if self.clones.remove(&clone_id).is_none() {
+            log::warn!("Attempted to unregister clone {clone_id} that was not registered");
+            return;
+        }
+
+        // Insert the index back to the available pool - BTreeSet handles ordering
+        // automatically
+        if !self.available_clone_indices.insert(clone_id) {
+            log::warn!("Clone index {clone_id} was already in available pool");
+        }
 
         self.queue.retain(|item_index, _| {
             self.clones
@@ -113,11 +190,11 @@ where
     }
 }
 
-pub(crate) struct SleepWaker {
+pub(crate) struct MultiWaker {
     wakers: Vec<Waker>,
 }
 
-impl Wake for SleepWaker {
+impl Wake for MultiWaker {
     fn wake(self: Arc<Self>) {
         trace!("Waking up all sleeping clones.");
         self.wakers.iter().for_each(Waker::wake_by_ref);
