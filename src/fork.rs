@@ -24,9 +24,6 @@ const MAX_CLONE_COUNT: usize = 65536;
 /// 1MB queue indices should handle most streaming scenarios comfortably.
 const MAX_QUEUE_SIZE: usize = 1024 * 1024;
 
-/// Buffer size before attempting queue index reset when approaching overflow.
-const QUEUE_RESET_THRESHOLD: usize = 1000;
-
 /// Configuration for Fork behavior.
 #[derive(Debug, Clone, Copy)]
 pub struct ForkConfig {
@@ -55,6 +52,8 @@ where
     /// Pool of available clone indices that can be reused
     available_clone_indices: BTreeSet<usize>,
     pub(crate) next_queue_index: usize,
+    /// Index of the latest cached item, used for capacity calculation
+    latest_cached_item_index: Option<usize>,
     config: ForkConfig,
 }
 
@@ -72,6 +71,7 @@ where
             clones: BTreeMap::default(),
             queue: BTreeMap::new(),
             next_queue_index: 0,
+            latest_cached_item_index: None,
             available_clone_indices: BTreeSet::new(),
             config,
         }
@@ -106,7 +106,7 @@ where
 
         trace!("Found {} wakers.", wakers.len());
 
-        Waker::from(Arc::new(SleepWaker { wakers }))
+        Waker::from(Arc::new(MultiWaker { wakers }))
     }
 
     /// Register a new clone and return its ID
@@ -131,31 +131,61 @@ where
         Ok(next_clone_index)
     }
 
-    /// Allocates a new queue index with overflow protection.
-    /// This method should be called instead of directly incrementing
-    /// `next_queue_index`.
-    pub(crate) fn allocate_queue_index(&mut self) -> Result<usize> {
-        // If we're approaching overflow and the queue is empty, reset to 0
-        // This helps with long-running applications that create many temporary items
-        if self.next_queue_index >= self.config.max_queue_size - QUEUE_RESET_THRESHOLD
-            && self.queue.is_empty()
-        {
-            self.next_queue_index = 0;
-        }
+    /// Calculates the remaining capacity in the queue.
+    /// This is the number of additional items that can be cached before hitting
+    /// the limit.
+    fn queue_capacity(&self) -> usize {
+        if let Some(latest_index) = self.latest_cached_item_index {
+            // Find the oldest item that any clone still needs to see
+            let oldest_needed_index = self
+                .clones
+                .values()
+                .filter_map(|state| {
+                    // Find the smallest index this clone still needs to see
+                    self.queue
+                        .keys()
+                        .find(|&&index| state.should_still_see_item(index))
+                        .copied()
+                })
+                .min()
+                .unwrap_or(latest_index + 1);
 
-        // Check for overflow before incrementing
-        if self.next_queue_index >= self.config.max_queue_size {
+            // Calculate the range of indices currently in use
+            let indices_in_use = if latest_index >= oldest_needed_index {
+                latest_index - oldest_needed_index + 1
+            } else {
+                // Handle wrap-around case
+                (self.config.max_queue_size - oldest_needed_index) + latest_index + 1
+            };
+
+            self.config.max_queue_size.saturating_sub(indices_in_use)
+        } else {
+            // No items cached yet, full capacity available
+            self.config.max_queue_size
+        }
+    }
+
+    /// Allocates a new queue index with ring-buffer wrapping.
+    /// Wraps around to 0 when reaching `max_queue_size` and returns an error
+    /// if there's no remaining capacity.
+    pub(crate) fn allocate_queue_index(&mut self) -> Result<usize> {
+        // Check if we have capacity for more items
+        if self.queue_capacity() == 0 {
             return Err(CloneStreamError::MaxQueueSizeExceeded {
                 max_allowed: self.config.max_queue_size,
                 current_size: self.queue.len(),
             });
         }
 
-        let allocated_index = self.next_queue_index;
-        self.next_queue_index += 1;
-        Ok(allocated_index)
-    }
+        // Get the current index and advance the next index with wrapping
+        let candidate_index = self.next_queue_index;
+        self.next_queue_index = (self.next_queue_index + 1) % self.config.max_queue_size;
 
+        // Update the latest cached item index
+        self.latest_cached_item_index = Some(candidate_index);
+
+        Ok(candidate_index)
+    }
     pub(crate) fn unregister(&mut self, clone_id: usize) {
         trace!("Unregistering clone {clone_id}.");
         if self.clones.remove(&clone_id).is_none() {
@@ -200,11 +230,11 @@ where
     }
 }
 
-pub(crate) struct SleepWaker {
+pub(crate) struct MultiWaker {
     wakers: Vec<Waker>,
 }
 
-impl Wake for SleepWaker {
+impl Wake for MultiWaker {
     fn wake(self: Arc<Self>) {
         trace!("Waking up all sleeping clones.");
         self.wakers.iter().for_each(Waker::wake_by_ref);
