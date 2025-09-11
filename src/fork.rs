@@ -132,7 +132,8 @@ where
     }
 
     /// Allocates a new queue index with overflow protection.
-    /// This method should be called instead of directly incrementing `next_queue_index`.
+    /// This method should be called instead of directly incrementing
+    /// `next_queue_index`.
     pub(crate) fn allocate_queue_index(&mut self) -> Result<usize> {
         // If we're approaching overflow and the queue is empty, reset to 0
         // This helps with long-running applications that create many temporary items
@@ -162,7 +163,8 @@ where
             return;
         }
 
-        // Insert the index back to the available pool - BTreeSet handles ordering automatically
+        // Insert the index back to the available pool - BTreeSet handles ordering
+        // automatically
         if !self.available_clone_indices.insert(clone_id) {
             log::warn!("Clone index {clone_id} was already in available pool");
         }

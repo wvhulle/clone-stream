@@ -43,7 +43,8 @@ impl StateHandler for QueueEmptyThenBasePending {
                         if let Ok(queue_index) = fork.allocate_queue_index() {
                             fork.queue.insert(queue_index, item.clone());
                         }
-                        // If allocation fails, we continue without queuing the item
+                        // If allocation fails, we continue without queuing the
+                        // item
                     } else {
                         trace!("No other clone is interested in the new item.");
                     }

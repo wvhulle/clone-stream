@@ -1,17 +1,18 @@
 //! # Clone streams with `clone-stream`
 //!
-//! Turn any [`Stream`] into a cloneable stream where each clone receives all items
-//! independently.
+//! Turn any [`Stream`] into a cloneable stream where each clone receives all
+//! items independently.
 //!
-//! The [`CloneStream`] struct implements [`Clone`] + [`Stream`], allowing you to
-//! create multiple independent consumers of the same data. The [`ForkStream`] trait
-//! provides the entry point for converting regular streams.
+//! The [`CloneStream`] struct implements [`Clone`] + [`Stream`], allowing you
+//! to create multiple independent consumers of the same data. The
+//! [`ForkStream`] trait provides the entry point for converting regular
+//! streams.
 //!
 //! # Quick Start
 //!
 //! ```rust
 //! use clone_stream::ForkStream;
-//! use futures::{stream, StreamExt};
+//! use futures::{StreamExt, stream};
 //!
 //! # #[tokio::main]
 //! # async fn main() {
@@ -38,8 +39,8 @@ pub trait ForkStream: Stream<Item: Clone> + Sized {
     ///
     /// ```rust
     /// use clone_stream::ForkStream;
-    /// use futures::{stream, StreamExt};
-    /// 
+    /// use futures::{StreamExt, stream};
+    ///
     /// let stream = stream::iter(0..3).fork();
     /// let mut clone = stream.clone();
     /// ```
@@ -59,7 +60,7 @@ pub trait ForkStream: Stream<Item: Clone> + Sized {
     /// ```rust
     /// use clone_stream::ForkStream;
     /// use futures::stream;
-    /// 
+    ///
     /// let stream = stream::iter(0..3).fork_with_limits(100, 5);
     /// ```
     fn fork_with_limits(self, max_queue_size: usize, max_clone_count: usize) -> CloneStream<Self> {

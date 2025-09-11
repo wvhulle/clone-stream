@@ -9,17 +9,18 @@ use log::trace;
 
 use crate::fork::Fork;
 
-/// A stream that implements `Clone` and returns cloned items from a base stream.
+/// A stream that implements `Clone` and returns cloned items from a base
+/// stream.
 ///
-/// This is the main type provided by this crate. It wraps any [`Stream`] whose items
-/// implement [`Clone`], allowing the stream itself to be cloned. Each clone operates
-/// independently but shares the same underlying stream data.
+/// This is the main type provided by this crate. It wraps any [`Stream`] whose
+/// items implement [`Clone`], allowing the stream itself to be cloned. Each
+/// clone operates independently but shares the same underlying stream data.
 ///
 /// # Examples
 ///
 /// ```rust
 /// use clone_stream::ForkStream;
-/// use futures::{stream, StreamExt};
+/// use futures::{StreamExt, stream};
 ///
 /// # #[tokio::main]
 /// # async fn main() {
@@ -40,8 +41,9 @@ use crate::fork::Fork;
 ///
 /// # Performance
 ///
-/// Items are cached internally until all clones have consumed them. The memory usage
-/// grows with the number of items that haven't been consumed by all clones yet.
+/// Items are cached internally until all clones have consumed them. The memory
+/// usage grows with the number of items that haven't been consumed by all
+/// clones yet.
 pub struct CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
@@ -57,7 +59,8 @@ where
 {
     /// Creates a new `CloneStream` from a `Fork`.
     ///
-    /// This is primarily used internally when creating the initial clone stream.
+    /// This is primarily used internally when creating the initial clone
+    /// stream.
     fn from(mut fork: Fork<BaseStream>) -> Self {
         let id = fork.register().expect("Failed to register initial clone");
 
@@ -76,8 +79,9 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if the maximum number of clones has been exceeded for this stream.
-    /// The limit is set when creating the stream with [`ForkStream::fork_with_limits`].
+    /// Panics if the maximum number of clones has been exceeded for this
+    /// stream. The limit is set when creating the stream with
+    /// [`ForkStream::fork_with_limits`].
     ///
     /// [`ForkStream::fork_with_limits`]: crate::ForkStream::fork_with_limits
     fn clone(&self) -> Self {
@@ -156,9 +160,9 @@ where
 {
     /// Returns the number of items currently queued for this clone.
     ///
-    /// This represents items that have been produced by the base stream but not yet
-    /// consumed by this particular clone. Other clones may have different queue lengths
-    /// depending on their consumption patterns.
+    /// This represents items that have been produced by the base stream but not
+    /// yet consumed by this particular clone. Other clones may have
+    /// different queue lengths depending on their consumption patterns.
     ///
     /// # Examples
     ///
