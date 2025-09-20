@@ -8,7 +8,7 @@ use crate::{
     Fork,
     states::{
         CloneState, NewStateAndPollResult, StateHandler,
-        hot_queue::unseen_queued_item_ready::UnseenQueuedItemReady,
+        unseen_queued_item_ready::UnseenQueuedItemReady,
     },
 };
 

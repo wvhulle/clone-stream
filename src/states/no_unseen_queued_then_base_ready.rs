@@ -7,7 +7,7 @@ use crate::{
     Fork,
     states::{
         CloneState, NewStateAndPollResult, StateHandler,
-        cold_queue::queue_empty_then_base_pending::QueueEmptyThenBasePending,
+        queue_empty_then_base_pending::QueueEmptyThenBasePending,
     },
 };
 

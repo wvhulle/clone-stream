@@ -3,19 +3,21 @@ use std::{
     task::{Poll, Waker},
 };
 
-use cold_queue::{
-    never_polled::NeverPolled, queue_empty_then_base_pending::QueueEmptyThenBasePending,
-    queue_empty_then_base_ready::QueueEmptyThenBaseReady,
-};
-use hot_queue::{
-    no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
-    no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
-    unseen_queued_item_ready::UnseenQueuedItemReady,
-};
 use log::trace;
 
-pub mod cold_queue;
-pub mod hot_queue;
+pub mod never_polled;
+pub mod queue_empty_then_base_pending;
+pub mod queue_empty_then_base_ready;
+pub mod no_unseen_queued_then_base_pending;
+pub mod no_unseen_queued_then_base_ready;
+pub mod unseen_queued_item_ready;
+
+use never_polled::NeverPolled;
+use queue_empty_then_base_pending::QueueEmptyThenBasePending;
+use queue_empty_then_base_ready::QueueEmptyThenBaseReady;
+use no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending;
+use no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady;
+use unseen_queued_item_ready::UnseenQueuedItemReady;
 
 use futures::Stream;
 

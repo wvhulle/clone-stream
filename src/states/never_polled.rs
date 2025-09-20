@@ -11,7 +11,7 @@ use crate::{
     Fork,
     states::{
         CloneState, NewStateAndPollResult, StateHandler,
-        hot_queue::no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
+        no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
     },
 };
 
