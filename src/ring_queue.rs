@@ -35,15 +35,16 @@ where
             if self.items.contains_key(&next_index) {
                 self.items.remove(&next_index);
                 if self.oldest == Some(next_index) {
-                    let mut next_oldest = (next_index + 1) % self.capacity;
-                    while !self.items.contains_key(&next_oldest) && next_oldest != next_index {
-                        next_oldest = (next_oldest + 1) % self.capacity;
-                    }
-                    self.oldest = if next_oldest == next_index {
-                        None
-                    } else {
-                        Some(next_oldest)
-                    };
+                    let next_oldest = self
+                        .items
+                        .range((next_index + 1)..)
+                        .map(|(k, _)| *k)
+                        .next()
+                        .or_else(|| {
+                            // Wrap around to beginning if needed
+                            self.items.range(..next_index).map(|(k, _)| *k).next()
+                        });
+                    self.oldest = next_oldest;
                 }
             }
             self.items.insert(next_index, item);
@@ -66,12 +67,15 @@ where
                 .map(|(k, _)| *k);
         }
         if Some(index) == self.newest {
-            self.newest = self
-                .items
-                .range((index + 1)..self.capacity)
-                .chain(self.items.range(0..index))
-                .next_back()
-                .map(|(k, _)| *k);
+            self.newest = self.items.keys().copied().max_by(|&a, &b| {
+                if self.is_strictly_newer_than(a, b) {
+                    std::cmp::Ordering::Greater
+                } else if self.is_strictly_newer_than(b, a) {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            });
         }
         removed
     }
@@ -80,7 +84,7 @@ where
         self.items.get(&index)
     }
 
-    pub(crate) fn is_strictly_newer_then(&self, maybe_newer: usize, current: usize) -> bool {
+    pub(crate) fn is_strictly_newer_than(&self, maybe_newer: usize, current: usize) -> bool {
         match (self.oldest, self.newest) {
             (Some(oldest), Some(newest)) => {
                 if oldest <= newest {
@@ -114,7 +118,8 @@ where
                 self.newest = None;
             } else {
                 // Use BTreeMap's range to efficiently find next item
-                self.oldest = self.items
+                self.oldest = self
+                    .items
                     .range((oldest + 1)..)
                     .next()
                     .map(|(k, _)| *k)
@@ -182,7 +187,8 @@ where
 
             self.current = if self.remaining > 0 {
                 // Use BTreeMap's range for efficient next lookup
-                self.queue.items
+                self.queue
+                    .items
                     .range((current_idx + 1)..)
                     .next()
                     .map(|(k, _)| *k)
