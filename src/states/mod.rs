@@ -88,9 +88,8 @@ impl<T> NewStateAndPollResult<T> {
     }
 }
 
-/// Helper to create common state transitions
 pub(crate) mod transitions {
-    use super::*;
+    use super::{CloneState, Waker};
     use crate::states::{
         empty_queue::{
             queue_empty_then_base_pending::QueueEmptyThenBasePending,
