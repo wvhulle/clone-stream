@@ -148,17 +148,19 @@ async fn slow_clone_miss_cache() {
         let missed_2 = (second_2 - first_2) - 1;
 
         // Track the best performing fast clone for this sample
-        let fast_clone_missed = std::cmp::min(missed_0, missed_1);
-        fast_clone_misses.push(fast_clone_missed);
+        let best_fast_clone_missed = std::cmp::min(missed_0, missed_1);
+        fast_clone_misses.push(best_fast_clone_missed);
         slow_clone_misses.push(missed_2);
 
         debug!(
-            "Sample {sample}: Fast clone missed {fast_clone_missed}, Slow clone missed {missed_2}"
+            "Sample {sample}: Fast clone missed {best_fast_clone_missed}, Slow clone missed {missed_2}"
         );
     }
 
     // Calculate averages
+    #[allow(clippy::cast_precision_loss)]
     let avg_fast_misses = fast_clone_misses.iter().sum::<usize>() as f64 / NUM_SAMPLES as f64;
+    #[allow(clippy::cast_precision_loss)]
     let avg_slow_misses = slow_clone_misses.iter().sum::<usize>() as f64 / NUM_SAMPLES as f64;
 
     warn!(

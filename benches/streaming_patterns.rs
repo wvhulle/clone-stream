@@ -13,7 +13,7 @@ fn sustained_streaming(c: &mut Criterion) {
     let mut group = c.benchmark_group("sustained_streaming");
     group.sample_size(10);
 
-    for items_per_batch in [50, 100, 200].iter() {
+    for items_per_batch in &[50, 100, 200] {
         group.bench_with_input(
             BenchmarkId::new("items", items_per_batch),
             items_per_batch,
@@ -57,7 +57,7 @@ fn sustained_streaming(c: &mut Criterion) {
                         let _ = producer.await;
                         let _results = black_box(join_all(consumers).await);
                     });
-                })
+                });
             },
         );
     }
@@ -100,7 +100,7 @@ fn bursty_traffic(c: &mut Criterion) {
                     for burst in 0..5 {
                         // Send burst
                         for item in 0..20 {
-                            let data = format!("burst-{}-item-{}", burst, item);
+                            let data = format!("burst-{burst}-item-{item}");
                             if sender.send(data).is_err() {
                                 break;
                             }
@@ -113,7 +113,7 @@ fn bursty_traffic(c: &mut Criterion) {
                 let _ = producer.await;
                 let _results = black_box(join_all(consumers).await);
             });
-        })
+        });
     });
 
     group.finish();
@@ -177,7 +177,7 @@ fn late_clone_joining(c: &mut Criterion) {
                 all_consumers.extend(late_consumers);
                 let _results = black_box(join_all(all_consumers).await);
             });
-        })
+        });
     });
 }
 

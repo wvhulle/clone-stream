@@ -120,7 +120,7 @@ where
 
         let clone_id = self.next_clone_id;
         self.next_clone_id = (self.next_clone_id + 1) % self.config.max_clone_count;
-        
+
         trace!("Registering clone {clone_id} (new index).");
         self.clones.insert(clone_id, CloneState::default());
         Ok(clone_id)
@@ -187,18 +187,25 @@ where
             return;
         }
 
-        // Use a single pass to collect and remove items
-        let queue_indices: Vec<usize> = self.queue.keys().copied().collect();
-        
-        for item_index in queue_indices {
-            let is_needed = self
-                .clones
-                .keys()
-                .any(|&clone_id| self.clone_should_still_see_item(clone_id, item_index));
+        let mut items_to_remove = Vec::new();
+
+        for (item_index, _) in &self.queue {
+            let mut is_needed = false;
+
+            for &clone_id in self.clones.keys() {
+                if self.clone_should_still_see_item(clone_id, item_index) {
+                    is_needed = true;
+                    break; // Early exit - at least one clone needs it
+                }
+            }
 
             if !is_needed {
-                self.queue.remove(item_index);
+                items_to_remove.push(item_index);
             }
+        }
+
+        for item_index in items_to_remove {
+            self.queue.remove(item_index);
         }
     }
 }

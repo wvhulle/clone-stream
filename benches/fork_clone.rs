@@ -13,8 +13,8 @@ fn basic_fork_creation(c: &mut Criterion) {
                 let data: Vec<usize> = (0..100).collect();
                 let stream = stream::iter(data);
                 let _forked = black_box(stream.fork());
-            })
-        })
+            });
+        });
     });
 }
 
@@ -23,7 +23,7 @@ fn clone_creation_scaling(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("clone_creation_scaling");
 
-    for clone_count in [1, 2, 4, 8, 16].iter() {
+    for clone_count in &[1, 2, 4, 8, 16] {
         group.bench_with_input(
             BenchmarkId::new("clones", clone_count),
             clone_count,
@@ -36,8 +36,8 @@ fn clone_creation_scaling(c: &mut Criterion) {
 
                         let _clones: Vec<_> =
                             black_box((0..clone_count).map(|_| forked.clone()).collect());
-                    })
-                })
+                    });
+                });
             },
         );
     }
@@ -49,7 +49,7 @@ fn concurrent_consumption(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("concurrent_consumption");
 
-    for clone_count in [2, 4, 8].iter() {
+    for clone_count in &[2, 4, 8] {
         group.bench_with_input(
             BenchmarkId::new("clones", clone_count),
             clone_count,
@@ -69,7 +69,7 @@ fn concurrent_consumption(c: &mut Criterion) {
                             .map(|mut clone| {
                                 tokio::spawn(async move {
                                     let mut count = 0;
-                                    while let Some(_) = clone.next().await {
+                                    while (clone.next().await).is_some() {
                                         count += 1;
                                     }
                                     count
@@ -85,8 +85,8 @@ fn concurrent_consumption(c: &mut Criterion) {
 
                         // Wait for completion
                         let _results = join_all(tasks).await;
-                    })
-                })
+                    });
+                });
             },
         );
     }
