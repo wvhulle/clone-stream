@@ -2,13 +2,11 @@ use std::task::{Poll, Waker};
 
 use futures::Stream;
 
-use super::no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending;
 use crate::{
     Fork,
     states::{
-        CloneState, NewStateAndPollResult, StateHandler,
-        cold_queue::queue_empty_then_base_pending::QueueEmptyThenBasePending,
-        poll_base_stream,
+        NewStateAndPollResult, StateHandler,
+        poll_base_stream, transitions,
     },
 };
 
@@ -32,41 +30,16 @@ impl StateHandler for NoUnseenQueuedThenBaseReady {
         BaseStream: Stream<Item: Clone>,
     {
         match poll_base_stream(clone_id, waker, fork) {
-            Poll::Ready(item) => NewStateAndPollResult {
-                new_state: CloneState::NoUnseenQueuedThenBaseReady(NoUnseenQueuedThenBaseReady),
-                poll_result: Poll::Ready(item),
-            },
+            Poll::Ready(item) => NewStateAndPollResult::ready(transitions::to_no_unseen_ready(), item),
             Poll::Pending => {
                 if fork.queue.is_empty() {
-                    NewStateAndPollResult {
-                        new_state: CloneState::QueueEmptyThenBasePending(
-                            QueueEmptyThenBasePending {
-                                waker: waker.clone(),
-                            },
-                        ),
-                        poll_result: Poll::Pending,
-                    }
+                    NewStateAndPollResult::pending(transitions::to_queue_empty_pending(waker))
                 } else if let Some(oldest_index) = fork.queue.oldest {
-                    NewStateAndPollResult {
-                        new_state: CloneState::NoUnseenQueuedThenBasePending(
-                            NoUnseenQueuedThenBasePending {
-                                most_recent_queue_item_index: oldest_index,
-                                waker: waker.clone(),
-                            },
-                        ),
-                        poll_result: Poll::Pending,
-                    }
+                    NewStateAndPollResult::pending(transitions::to_no_unseen_pending(waker, oldest_index))
                 } else {
                     // Queue has items but oldest is None - this shouldn't happen
                     // Fall back to empty queue state
-                    NewStateAndPollResult {
-                        new_state: CloneState::QueueEmptyThenBasePending(
-                            QueueEmptyThenBasePending {
-                                waker: waker.clone(),
-                            },
-                        ),
-                        poll_result: Poll::Pending,
-                    }
+                    NewStateAndPollResult::pending(transitions::to_queue_empty_pending(waker))
                 }
             }
         }

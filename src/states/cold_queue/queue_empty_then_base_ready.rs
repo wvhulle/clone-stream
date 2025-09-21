@@ -3,10 +3,9 @@ use std::task::{Context, Poll, Waker};
 use futures::{Stream, StreamExt};
 use log::trace;
 
-use super::queue_empty_then_base_pending::QueueEmptyThenBasePending;
 use crate::{
     Fork,
-    states::{CloneState, NewStateAndPollResult, StateHandler},
+    states::{NewStateAndPollResult, StateHandler, transitions},
 };
 
 #[derive(Clone, Debug)]
@@ -37,34 +36,16 @@ impl StateHandler for QueueEmptyThenBaseReady {
                     trace!("No other clone is interested in the new item.");
                 }
                 trace!("Clone {clone_id}: QueueEmptyThenBaseReady returning item from base stream");
-                NewStateAndPollResult {
-                    new_state: CloneState::QueueEmptyThenBaseReady(QueueEmptyThenBaseReady),
-                    poll_result: Poll::Ready(item),
-                }
+                NewStateAndPollResult::ready(transitions::to_queue_empty_ready(), item)
             }
             Poll::Pending => {
                 // If queue has items, this clone has already seen them (since it was in
                 // QueueEmptyThenBaseReady) so transition to
                 // NoUnseenQueuedThenBasePending with the most recent queue index
                 if let Some(newest_index) = fork.queue.newest {
-                    NewStateAndPollResult {
-                        new_state: CloneState::NoUnseenQueuedThenBasePending(
-                            crate::states::hot_queue::no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending {
-                                waker: waker.clone(),
-                                most_recent_queue_item_index: newest_index,
-                            },
-                        ),
-                        poll_result: Poll::Pending,
-                    }
+                    NewStateAndPollResult::pending(transitions::to_no_unseen_pending(waker, newest_index))
                 } else {
-                    NewStateAndPollResult {
-                        new_state: CloneState::QueueEmptyThenBasePending(
-                            QueueEmptyThenBasePending {
-                                waker: waker.clone(),
-                            },
-                        ),
-                        poll_result: Poll::Pending,
-                    }
+                    NewStateAndPollResult::pending(transitions::to_queue_empty_pending(waker))
                 }
             }
         }

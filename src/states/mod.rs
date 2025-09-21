@@ -88,6 +88,54 @@ impl<T> NewStateAndPollResult<T> {
     }
 }
 
+/// Common trait for states that hold wakers
+pub(crate) trait WakerState {
+    fn waker(&self) -> &Waker;
+}
+
+/// Helper to create common state transitions
+pub(crate) mod transitions {
+    use super::*;
+    use crate::states::{
+        cold_queue::{
+            queue_empty_then_base_pending::QueueEmptyThenBasePending,
+            queue_empty_then_base_ready::QueueEmptyThenBaseReady,
+        },
+        hot_queue::{
+            no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
+            no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
+            unseen_queued_item_ready::UnseenQueuedItemReady,
+        },
+    };
+
+    pub(crate) fn to_queue_empty_pending(waker: &Waker) -> CloneState {
+        CloneState::QueueEmptyThenBasePending(QueueEmptyThenBasePending {
+            waker: waker.clone(),
+        })
+    }
+
+    pub(crate) fn to_queue_empty_ready() -> CloneState {
+        CloneState::QueueEmptyThenBaseReady(QueueEmptyThenBaseReady)
+    }
+
+    pub(crate) fn to_no_unseen_pending(waker: &Waker, index: usize) -> CloneState {
+        CloneState::NoUnseenQueuedThenBasePending(NoUnseenQueuedThenBasePending {
+            waker: waker.clone(),
+            most_recent_queue_item_index: index,
+        })
+    }
+
+    pub(crate) fn to_no_unseen_ready() -> CloneState {
+        CloneState::NoUnseenQueuedThenBaseReady(NoUnseenQueuedThenBaseReady)
+    }
+
+    pub(crate) fn to_unseen_item_ready(index: usize) -> CloneState {
+        CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
+            unseen_ready_queue_item_index: index,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum CloneState {
     NeverPolled(NeverPolled),

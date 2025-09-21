@@ -2,13 +2,9 @@ use std::task::{Poll, Waker};
 
 use futures::Stream;
 
-use super::{
-    no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
-    unseen_queued_item_ready::UnseenQueuedItemReady,
-};
 use crate::{
     Fork,
-    states::{CloneState, NewStateAndPollResult, StateHandler, poll_base_stream},
+    states::{NewStateAndPollResult, StateHandler, WakerState, poll_base_stream, transitions},
 };
 
 #[derive(Clone)]
@@ -20,11 +16,14 @@ pub(crate) struct NoUnseenQueuedThenBasePending {
 impl std::fmt::Debug for NoUnseenQueuedThenBasePending {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NoUnseenQueuedThenBasePending")
-            .field(
-                "most_recent_queue_item_index",
-                &self.most_recent_queue_item_index,
-            )
+            .field("most_recent_queue_item_index", &self.most_recent_queue_item_index)
             .finish_non_exhaustive()
+    }
+}
+
+impl WakerState for NoUnseenQueuedThenBasePending {
+    fn waker(&self) -> &Waker {
+        &self.waker
     }
 }
 
@@ -50,27 +49,16 @@ impl StateHandler for NoUnseenQueuedThenBasePending {
                     fork.queue.remove(newer_queue_item_index);
                 }
 
-                NewStateAndPollResult {
-                    new_state: CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
-                        unseen_ready_queue_item_index: newer_queue_item_index,
-                    }),
-                    poll_result: Poll::Ready(item.clone()),
-                }
+                NewStateAndPollResult::ready(
+                    transitions::to_unseen_item_ready(newer_queue_item_index),
+                    item.clone(),
+                )
             }
             None => match poll_base_stream(clone_id, waker, fork) {
-                Poll::Ready(item) => NewStateAndPollResult {
-                    new_state: CloneState::NoUnseenQueuedThenBaseReady(NoUnseenQueuedThenBaseReady),
-                    poll_result: Poll::Ready(item),
-                },
-                Poll::Pending => NewStateAndPollResult {
-                    new_state: CloneState::NoUnseenQueuedThenBasePending(
-                        NoUnseenQueuedThenBasePending {
-                            waker: waker.clone(),
-                            most_recent_queue_item_index: self.most_recent_queue_item_index,
-                        },
-                    ),
-                    poll_result: Poll::Pending,
-                },
+                Poll::Ready(item) => NewStateAndPollResult::ready(transitions::to_no_unseen_ready(), item),
+                Poll::Pending => NewStateAndPollResult::pending(
+                    transitions::to_no_unseen_pending(waker, self.most_recent_queue_item_index)
+                ),
             },
         }
     }

@@ -1,17 +1,12 @@
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Waker};
 
 use futures::{Stream, StreamExt};
 use log::trace;
 
-use super::{
-    queue_empty_then_base_pending::QueueEmptyThenBasePending,
-    queue_empty_then_base_ready::QueueEmptyThenBaseReady,
-};
 use crate::{
     Fork,
     states::{
-        CloneState, NewStateAndPollResult, StateHandler,
-        hot_queue::no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
+        NewStateAndPollResult, StateHandler, transitions,
     },
 };
 
@@ -42,28 +37,18 @@ impl StateHandler for NeverPolled {
                     trace!("No other clone is interested in the new item.");
                 }
 
-                NewStateAndPollResult {
-                    new_state: CloneState::QueueEmptyThenBaseReady(QueueEmptyThenBaseReady),
-                    poll_result: Poll::Ready(item),
-                }
+                NewStateAndPollResult::ready(transitions::to_queue_empty_ready(), item)
             }
             std::task::Poll::Pending => {
                 trace!("The base stream is pending.");
-                NewStateAndPollResult {
-                    poll_result: Poll::Pending,
-                    new_state: if fork.queue.is_empty() {
-                        trace!("The item queue is empty.");
-                        CloneState::QueueEmptyThenBasePending(QueueEmptyThenBasePending {
-                            waker: waker.clone(),
-                        })
-                    } else {
-                        trace!("The item queue is not empty.");
-                        CloneState::NoUnseenQueuedThenBasePending(NoUnseenQueuedThenBasePending {
-                            most_recent_queue_item_index: fork.queue.newest_index().unwrap(),
-                            waker: waker.clone(),
-                        })
-                    },
-                }
+                let new_state = if fork.queue.is_empty() {
+                    trace!("The item queue is empty.");
+                    transitions::to_queue_empty_pending(waker)
+                } else {
+                    trace!("The item queue is not empty.");
+                    transitions::to_no_unseen_pending(waker, fork.queue.newest_index().unwrap())
+                };
+                NewStateAndPollResult::pending(new_state)
             }
         }
     }
