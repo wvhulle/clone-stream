@@ -1,12 +1,12 @@
 use clone_stream::ForkStream;
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use futures::{StreamExt, stream, future::join_all};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use futures::{StreamExt, future::join_all, stream};
 use tokio::runtime::Runtime;
 
 /// Benchmarks basic fork and clone operations
 fn basic_fork_creation(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     c.bench_function("basic_fork_creation", |b| {
         b.iter(|| {
             rt.block_on(async {
@@ -22,7 +22,7 @@ fn basic_fork_creation(c: &mut Criterion) {
 fn clone_creation_scaling(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("clone_creation_scaling");
-    
+
     for clone_count in [1, 2, 4, 8, 16].iter() {
         group.bench_with_input(
             BenchmarkId::new("clones", clone_count),
@@ -33,12 +33,9 @@ fn clone_creation_scaling(c: &mut Criterion) {
                         let data: Vec<usize> = (0..50).collect();
                         let stream = stream::iter(data);
                         let forked = stream.fork();
-                        
-                        let _clones: Vec<_> = black_box(
-                            (0..clone_count)
-                                .map(|_| forked.clone())
-                                .collect()
-                        );
+
+                        let _clones: Vec<_> =
+                            black_box((0..clone_count).map(|_| forked.clone()).collect());
                     })
                 })
             },
@@ -51,7 +48,7 @@ fn clone_creation_scaling(c: &mut Criterion) {
 fn concurrent_consumption(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("concurrent_consumption");
-    
+
     for clone_count in [2, 4, 8].iter() {
         group.bench_with_input(
             BenchmarkId::new("clones", clone_count),
@@ -62,12 +59,10 @@ fn concurrent_consumption(c: &mut Criterion) {
                         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<usize>();
                         let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
                         let forked = stream.fork();
-                        
+
                         // Create clones
-                        let clones: Vec<_> = (0..clone_count)
-                            .map(|_| forked.clone())
-                            .collect();
-                        
+                        let clones: Vec<_> = (0..clone_count).map(|_| forked.clone()).collect();
+
                         // Spawn consumers
                         let tasks: Vec<_> = clones
                             .into_iter()
@@ -81,13 +76,13 @@ fn concurrent_consumption(c: &mut Criterion) {
                                 })
                             })
                             .collect();
-                        
+
                         // Send data
                         for i in 0..100 {
                             sender.send(i).unwrap();
                         }
                         drop(sender);
-                        
+
                         // Wait for completion
                         let _results = join_all(tasks).await;
                     })

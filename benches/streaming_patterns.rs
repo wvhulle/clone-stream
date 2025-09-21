@@ -1,16 +1,18 @@
 use clone_stream::ForkStream;
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use futures::{StreamExt, future::join_all};
-use tokio::runtime::Runtime;
-use tokio::time::{sleep, Duration, interval};
-use tokio::sync::mpsc;
+use tokio::{
+    runtime::Runtime,
+    sync::mpsc,
+    time::{Duration, interval, sleep},
+};
 
 /// Benchmarks sustained streaming with rate limiting
 fn sustained_streaming(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("sustained_streaming");
     group.sample_size(10);
-    
+
     for items_per_batch in [50, 100, 200].iter() {
         group.bench_with_input(
             BenchmarkId::new("items", items_per_batch),
@@ -21,13 +23,11 @@ fn sustained_streaming(c: &mut Criterion) {
                         let (sender, receiver) = mpsc::unbounded_channel::<usize>();
                         let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
                         let forked = stream.fork();
-                        
+
                         // Create consumers
                         let clone_count = 3;
-                        let clones: Vec<_> = (0..clone_count)
-                            .map(|_| forked.clone())
-                            .collect();
-                        
+                        let clones: Vec<_> = (0..clone_count).map(|_| forked.clone()).collect();
+
                         // Producer task
                         let producer = tokio::spawn(async move {
                             let mut interval = interval(Duration::from_millis(1));
@@ -38,7 +38,7 @@ fn sustained_streaming(c: &mut Criterion) {
                                 }
                             }
                         });
-                        
+
                         // Consumer tasks
                         let consumers: Vec<_> = clones
                             .into_iter()
@@ -52,7 +52,7 @@ fn sustained_streaming(c: &mut Criterion) {
                                 })
                             })
                             .collect();
-                        
+
                         // Wait for completion
                         let _ = producer.await;
                         let _results = black_box(join_all(consumers).await);
@@ -69,14 +69,14 @@ fn bursty_traffic(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("bursty_traffic");
     group.sample_size(10);
-    
+
     group.bench_function("burst_handling", |b| {
         b.iter(|| {
             rt.block_on(async {
                 let (sender, receiver) = mpsc::unbounded_channel::<String>();
                 let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
                 let forked = stream.fork();
-                
+
                 // Create mixed-speed consumers
                 let consumers: Vec<_> = (0..4)
                     .map(|idx| {
@@ -94,7 +94,7 @@ fn bursty_traffic(c: &mut Criterion) {
                         })
                     })
                     .collect();
-                
+
                 // Send bursts
                 let producer = tokio::spawn(async move {
                     for burst in 0..5 {
@@ -109,27 +109,27 @@ fn bursty_traffic(c: &mut Criterion) {
                         sleep(Duration::from_millis(2)).await;
                     }
                 });
-                
+
                 let _ = producer.await;
                 let _results = black_box(join_all(consumers).await);
             });
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmarks late clone joining behavior
 fn late_clone_joining(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    
+
     c.bench_function("late_joining", |b| {
         b.iter(|| {
             rt.block_on(async {
                 let (sender, receiver) = mpsc::unbounded_channel::<u64>();
                 let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
                 let forked = stream.fork();
-                
+
                 // Early consumers
                 let early_consumers: Vec<_> = (0..2)
                     .map(|_| {
@@ -143,7 +143,7 @@ fn late_clone_joining(c: &mut Criterion) {
                         })
                     })
                     .collect();
-                
+
                 // Producer
                 let producer = tokio::spawn(async move {
                     for i in 0..100 {
@@ -156,7 +156,7 @@ fn late_clone_joining(c: &mut Criterion) {
                         }
                     }
                 });
-                
+
                 // Late consumers (after some delay)
                 sleep(Duration::from_millis(1)).await;
                 let late_consumers: Vec<_> = (0..2)
@@ -171,7 +171,7 @@ fn late_clone_joining(c: &mut Criterion) {
                         })
                     })
                     .collect();
-                
+
                 let _ = producer.await;
                 let mut all_consumers = early_consumers;
                 all_consumers.extend(late_consumers);

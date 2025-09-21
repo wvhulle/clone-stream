@@ -43,8 +43,9 @@ impl StateHandler for QueueEmptyThenBaseReady {
                 }
             }
             Poll::Pending => {
-                // If queue has items, this clone has already seen them (since it was in QueueEmptyThenBaseReady)
-                // so transition to NoUnseenQueuedThenBasePending with the most recent queue index
+                // If queue has items, this clone has already seen them (since it was in
+                // QueueEmptyThenBaseReady) so transition to
+                // NoUnseenQueuedThenBasePending with the most recent queue index
                 if let Some(newest_index) = fork.queue.newest {
                     NewStateAndPollResult {
                         new_state: CloneState::NoUnseenQueuedThenBasePending(

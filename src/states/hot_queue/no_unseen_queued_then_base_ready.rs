@@ -1,7 +1,6 @@
-use std::task::{Context, Poll, Waker};
+use std::task::{Poll, Waker};
 
-use futures::{Stream, StreamExt};
-use log::trace;
+use futures::Stream;
 
 use super::no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending;
 use crate::{
@@ -9,6 +8,7 @@ use crate::{
     states::{
         CloneState, NewStateAndPollResult, StateHandler,
         cold_queue::queue_empty_then_base_pending::QueueEmptyThenBasePending,
+        common::poll_base_stream,
     },
 };
 
@@ -31,21 +31,11 @@ impl StateHandler for NoUnseenQueuedThenBaseReady {
     where
         BaseStream: Stream<Item: Clone>,
     {
-        match fork
-            .base_stream
-            .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
-        {
-            Poll::Ready(item) => {
-                if fork.has_other_clones_waiting(clone_id) {
-                    trace!("Other clones are waiting for the new item.");
-                    fork.queue.insert(item.clone());
-                }
-                // If allocation fails, we continue without queuing the item
-                NewStateAndPollResult {
-                    new_state: CloneState::NoUnseenQueuedThenBaseReady(NoUnseenQueuedThenBaseReady),
-                    poll_result: Poll::Ready(item),
-                }
-            }
+        match poll_base_stream(clone_id, waker, fork) {
+            Poll::Ready(item) => NewStateAndPollResult {
+                new_state: CloneState::NoUnseenQueuedThenBaseReady(NoUnseenQueuedThenBaseReady),
+                poll_result: Poll::Ready(item),
+            },
             Poll::Pending => {
                 if fork.queue.is_empty() {
                     NewStateAndPollResult {

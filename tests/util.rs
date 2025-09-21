@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
 use tokio::time::{Instant, sleep_until};
 

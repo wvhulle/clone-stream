@@ -1,7 +1,6 @@
-use std::task::{Context, Poll, Waker};
+use std::task::{Poll, Waker};
 
-use futures::{Stream, StreamExt};
-use log::trace;
+use futures::Stream;
 
 use super::{
     no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
@@ -9,7 +8,7 @@ use super::{
 };
 use crate::{
     Fork,
-    states::{CloneState, NewStateAndPollResult, StateHandler},
+    states::{CloneState, NewStateAndPollResult, StateHandler, common::poll_base_stream},
 };
 
 #[derive(Clone)]
@@ -58,35 +57,21 @@ impl StateHandler for NoUnseenQueuedThenBasePending {
                     poll_result: Poll::Ready(item.clone()),
                 }
             }
-            None => {
-                match fork
-                    .base_stream
-                    .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
-                {
-                    Poll::Ready(item) => {
-                        if fork.has_other_clones_waiting(clone_id) {
-                            trace!("Other clones are waiting for the new item.");
-                            fork.queue.insert(item.clone());
-                        }
-                        // If allocation fails, we continue without queuing the item
-                        NewStateAndPollResult {
-                            new_state: CloneState::NoUnseenQueuedThenBaseReady(
-                                NoUnseenQueuedThenBaseReady,
-                            ),
-                            poll_result: Poll::Ready(item),
-                        }
-                    }
-                    Poll::Pending => NewStateAndPollResult {
-                        new_state: CloneState::NoUnseenQueuedThenBasePending(
-                            NoUnseenQueuedThenBasePending {
-                                waker: waker.clone(),
-                                most_recent_queue_item_index: self.most_recent_queue_item_index,
-                            },
-                        ),
-                        poll_result: Poll::Pending,
-                    },
-                }
-            }
+            None => match poll_base_stream(clone_id, waker, fork) {
+                Poll::Ready(item) => NewStateAndPollResult {
+                    new_state: CloneState::NoUnseenQueuedThenBaseReady(NoUnseenQueuedThenBaseReady),
+                    poll_result: Poll::Ready(item),
+                },
+                Poll::Pending => NewStateAndPollResult {
+                    new_state: CloneState::NoUnseenQueuedThenBasePending(
+                        NoUnseenQueuedThenBasePending {
+                            waker: waker.clone(),
+                            most_recent_queue_item_index: self.most_recent_queue_item_index,
+                        },
+                    ),
+                    poll_result: Poll::Pending,
+                },
+            },
         }
     }
 }

@@ -1,9 +1,10 @@
 mod util;
-use clone_stream::ForkStream;
 use core::time::Duration;
+use std::sync::Arc;
+
+use clone_stream::ForkStream;
 use futures::{StreamExt, join};
 use log::{debug, info, warn};
-use std::sync::Arc;
 use tokio::{spawn, sync::Barrier, time::sleep};
 
 /// Test that with limited queue capacity, slow clones miss messages
@@ -56,7 +57,8 @@ async fn slow_clone_not_miss_cache() {
         // With limited queue capacity, slow clone should miss items
         let difference = next - first;
         debug!("Clone 1 difference: {difference}");
-        // assert!(difference > 1, "Clone 1 should have missed at least one message (got difference {})", difference);
+        // assert!(difference > 1, "Clone 1 should have missed at least one message (got
+        // difference {})", difference);
         (first, next)
     });
 
@@ -69,12 +71,14 @@ async fn slow_clone_not_miss_cache() {
 
     assert!(
         good_next - good_first == 1,
-        "clone_0 should get consecutive items since it does not have a blocking call in between (got {}).",
+        "clone_0 should get consecutive items since it does not have a blocking call in between \
+         (got {}).",
         good_next - good_first
     );
     assert!(
         bad_next - bad_first == 1,
-        "clone_1 should have not have missed the second element since it should have been cached in the queue, instead it missed {} elements.",
+        "clone_1 should have not have missed the second element since it should have been cached \
+         in the queue, instead it missed {} elements.",
         bad_next - bad_first
     );
 }
@@ -158,16 +162,19 @@ async fn slow_clone_miss_cache() {
     let avg_slow_misses = slow_clone_misses.iter().sum::<usize>() as f64 / NUM_SAMPLES as f64;
 
     warn!(
-        "Average misses over {NUM_SAMPLES} samples: Fast clones: {avg_fast_misses:.2}, Slow clone: {avg_slow_misses:.2}"
+        "Average misses over {NUM_SAMPLES} samples: Fast clones: {avg_fast_misses:.2}, Slow \
+         clone: {avg_slow_misses:.2}"
     );
 
     // Statistical assertions: slow clones should miss more items on average
     assert!(
         avg_slow_misses > avg_fast_misses,
-        "Slow clones should miss more items on average than fast clones. Fast: {avg_fast_misses:.2}, Slow: {avg_slow_misses:.2}"
+        "Slow clones should miss more items on average than fast clones. Fast: \
+         {avg_fast_misses:.2}, Slow: {avg_slow_misses:.2}"
     );
 
-    // The difference should be statistically significant (at least 0.5 items on average)
+    // The difference should be statistically significant (at least 0.5 items on
+    // average)
     assert!(
         avg_slow_misses - avg_fast_misses >= 0.5,
         "Slow clones should miss significantly more items than fast clones. Difference: {:.2}",

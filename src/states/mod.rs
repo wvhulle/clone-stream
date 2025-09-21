@@ -14,6 +14,7 @@ use hot_queue::{
 };
 
 pub mod cold_queue;
+mod common;
 pub mod hot_queue;
 
 use futures::Stream;

@@ -37,10 +37,3 @@ harness = false
 name = "streaming_patterns"
 harness = false
 
-[[bench]]
-name = "performance_scaling"
-harness = false
-
-[[bench]]
-name = "memory_management"
-harness = false

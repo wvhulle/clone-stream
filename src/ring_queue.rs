@@ -26,19 +26,15 @@ where
         }
     }
 
-    /// Inserts an item at the given index.
     pub(crate) fn insert(&mut self, item: T) {
         if self.capacity == 0 {
             return;
         }
         if let Some(newest) = self.newest {
             let next_index = (newest + 1) % self.capacity;
-            // Check if we're overwriting an existing item
             if self.items.contains_key(&next_index) {
                 self.items.remove(&next_index);
-                // If we're removing the oldest item, update oldest pointer
                 if self.oldest == Some(next_index) {
-                    // Find the next oldest item in ring buffer order
                     let mut next_oldest = (next_index + 1) % self.capacity;
                     while !self.items.contains_key(&next_oldest) && next_oldest != next_index {
                         next_oldest = (next_oldest + 1) % self.capacity;
@@ -62,7 +58,6 @@ where
     pub(crate) fn remove(&mut self, index: usize) -> Option<T> {
         let removed = self.items.remove(&index);
         if Some(index) == self.oldest {
-            // Update oldest to the next item
             self.oldest = self
                 .items
                 .range((index + 1)..self.capacity)
@@ -71,7 +66,6 @@ where
                 .map(|(k, _)| *k);
         }
         if Some(index) == self.newest {
-            // Update newest to the previous item
             self.newest = self
                 .items
                 .range((index + 1)..self.capacity)
@@ -82,7 +76,6 @@ where
         removed
     }
 
-    /// Gets an item at the given index.
     pub(crate) fn get(&self, index: usize) -> Option<&T> {
         self.items.get(&index)
     }
@@ -91,10 +84,8 @@ where
         match (self.oldest, self.newest) {
             (Some(oldest), Some(newest)) => {
                 if oldest <= newest {
-                    // Normal case: no wraparound
                     oldest <= current && current < maybe_newer && maybe_newer <= newest
                 } else {
-                    // Wraparound case
                     (oldest <= current && current < self.capacity && maybe_newer <= newest)
                         || (current < maybe_newer && maybe_newer <= newest)
                         || (oldest <= current
@@ -102,31 +93,26 @@ where
                             && maybe_newer < self.capacity)
                 }
             }
-            _ => false, // Empty queue case
+            _ => false,
         }
     }
 
-    /// Returns true if the queue is empty.
     pub(crate) fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
-    /// Returns an iterator over the keys.
     pub(crate) fn keys(&self) -> std::collections::btree_map::Keys<'_, usize, T> {
         self.items.keys()
     }
 
-    /// Removes and returns the first key-value pair.
     pub(crate) fn oldest_with_index(&mut self) -> Option<(usize, T)> {
         if let Some(oldest) = self.oldest
             && let Some(item) = self.items.remove(&oldest)
         {
-            // Update oldest pointer
             if self.items.is_empty() {
                 self.oldest = None;
                 self.newest = None;
             } else {
-                // Find the next oldest item in ring buffer order
                 let mut next_oldest = (oldest + 1) % self.capacity;
                 while !self.items.contains_key(&next_oldest) && next_oldest != oldest {
                     next_oldest = (next_oldest + 1) % self.capacity;
@@ -198,12 +184,10 @@ where
         {
             self.remaining -= 1;
 
-            // Find the next actual item in ring buffer order
             self.current = if self.remaining > 0 {
                 let mut next_idx = (current_idx + 1) % self.queue.capacity;
                 let start_idx = next_idx;
 
-                // Find the next existing item, wrapping around if necessary
                 while !self.queue.items.contains_key(&next_idx) && next_idx != start_idx {
                     next_idx = (next_idx + 1) % self.queue.capacity;
                 }

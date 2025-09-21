@@ -56,13 +56,11 @@ impl StateHandler for QueueEmptyThenBasePending {
                 }
                 Poll::Pending => {
                     debug!("The base stream is still pending.");
-                    NewStateAndPollResult::pending(
-                        CloneState::QueueEmptyThenBasePending(
-                            QueueEmptyThenBasePending {
-                                waker: waker.clone(),
-                            },
-                        ),
-                    )
+                    NewStateAndPollResult::pending(CloneState::QueueEmptyThenBasePending(
+                        QueueEmptyThenBasePending {
+                            waker: waker.clone(),
+                        },
+                    ))
                 }
             }
         } else {
@@ -77,7 +75,7 @@ impl StateHandler for QueueEmptyThenBasePending {
                 };
             };
             trace!("The queue is not empty, first item is at index {first_queue_index}.");
-            
+
             let clones_waiting: Vec<_> = fork
                 .clones
                 .iter()
@@ -90,7 +88,10 @@ impl StateHandler for QueueEmptyThenBasePending {
             if clones_waiting.is_empty() {
                 trace!("No other clone is waiting for the first item in the queue.");
                 let popped_item = fork.queue.oldest_with_index().unwrap().1;
-                trace!("Clone {clone_id}: QueueEmptyThenBasePending popping item at index {first_queue_index}");
+                trace!(
+                    "Clone {clone_id}: QueueEmptyThenBasePending popping item at index \
+                     {first_queue_index}"
+                );
                 NewStateAndPollResult {
                     new_state: CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
                         unseen_ready_queue_item_index: first_queue_index,
@@ -100,7 +101,10 @@ impl StateHandler for QueueEmptyThenBasePending {
             } else {
                 trace!("Forks {clones_waiting:?} also need to see the first item in the queue.");
                 let cloned_item = fork.queue.get(first_queue_index).unwrap().clone();
-                trace!("Clone {clone_id}: QueueEmptyThenBasePending cloning item at index {first_queue_index} (other clones waiting)");
+                trace!(
+                    "Clone {clone_id}: QueueEmptyThenBasePending cloning item at index \
+                     {first_queue_index} (other clones waiting)"
+                );
                 NewStateAndPollResult {
                     new_state: CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
                         unseen_ready_queue_item_index: first_queue_index,

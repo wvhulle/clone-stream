@@ -86,11 +86,12 @@ where
     }
 
     pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
-        // Collect wakers more efficiently
         let mut wakers = Vec::new();
-        
+
         for state in self.clones.values() {
-            if state.should_still_see_base_item() && let Some(waker) = state.waker() {
+            if state.should_still_see_base_item()
+                && let Some(waker) = state.waker()
+            {
                 wakers.push(waker.clone());
             }
         }
@@ -107,7 +108,6 @@ where
             return Ok(reused_id);
         }
 
-        // Derive the next new index by finding the lowest unused index
         let next_clone_index = (0..self.config.max_clone_count)
             .find(|&id| !self.clones.contains_key(&id))
             .ok_or(CloneStreamError::MaxClonesExceeded {
@@ -127,15 +127,12 @@ where
             .count()
     }
 
-    /// Helper method to check if any other clone (excluding the specified one) 
-    /// should still see base items. This is a common pattern used across state handlers.
     pub(crate) fn has_other_clones_waiting(&self, exclude_clone_id: usize) -> bool {
         self.clones.iter().any(|(clone_id, state)| {
             *clone_id != exclude_clone_id && state.should_still_see_base_item()
         })
     }
 
-    /// Checks if a clone should still see an item, using proper ring buffer ordering.
     pub(crate) fn clone_should_still_see_item(
         &self,
         clone_id: usize,
@@ -145,16 +142,12 @@ where
         match state {
             CloneState::QueueEmptyThenBasePending(_) => true,
             CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
-                // Use ring buffer ordering instead of direct comparison
                 self.queue.is_strictly_newer_then(
                     queue_item_index,
                     no_unseen_queued_then_base_pending.most_recent_queue_item_index,
                 )
             }
             CloneState::UnseenQueuedItemReady(unseen_queued_item_ready) => {
-                // Clone is actively consuming items from the queue
-                // It should see items that come before or at its current position
-                // (items it hasn't consumed yet)
                 !self.queue.is_strictly_newer_then(
                     queue_item_index,
                     unseen_queued_item_ready.unseen_ready_queue_item_index,
@@ -173,42 +166,34 @@ where
             return;
         }
 
-        // Insert the index back to the available pool - BTreeSet handles ordering
-        // automatically
         if !self.available_clone_indices.insert(clone_id) {
             log::warn!("Clone index {clone_id} was already in available pool");
         }
-        
-        // Optimized cleanup: remove items from oldest to newest, stopping when we find 
-        // an item that's still needed. This is much more efficient than checking every item.
+
         self.cleanup_unneeded_queue_items();
         trace!("Unregister of clone {clone_id} complete.");
     }
 
-    /// Efficiently removes unneeded items from the queue by checking from oldest to newest
     fn cleanup_unneeded_queue_items(&mut self) {
         // If no clones remaining, clear the entire queue
         if self.clones.is_empty() {
-            while self.queue.oldest_with_index().is_some() {
-                // Queue will update its pointers automatically
-            }
+            while self.queue.oldest_with_index().is_some() {}
             return;
         }
 
-        // Collect indices of items to remove, starting from oldest
         let mut items_to_remove = Vec::new();
-        
+
         for (item_index, _) in &self.queue {
-            let is_needed = self.clones.iter().any(|(clone_id, _)| {
-                self.clone_should_still_see_item(*clone_id, item_index)
-            });
-            
+            let is_needed = self
+                .clones
+                .iter()
+                .any(|(clone_id, _)| self.clone_should_still_see_item(*clone_id, item_index));
+
             if !is_needed {
                 items_to_remove.push(item_index);
             }
         }
 
-        // Remove the unneeded items
         for item_index in items_to_remove {
             self.queue.remove(item_index);
         }
