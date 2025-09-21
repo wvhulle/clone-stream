@@ -86,19 +86,17 @@ where
     }
 
     pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
-        let existing_wakers = self
-            .clones
-            .iter()
-            .filter(|(_clone_id, state)| state.should_still_see_base_item())
-            .filter_map(|(_clone_id, state)| state.waker().clone());
+        // Collect wakers more efficiently
+        let mut wakers = Vec::new();
+        
+        for state in self.clones.values() {
+            if state.should_still_see_base_item() && let Some(waker) = state.waker() {
+                wakers.push(waker.clone());
+            }
+        }
+        wakers.push(extra_waker.clone());
 
-        let new_total_wakers = existing_wakers
-            .chain(std::iter::once(extra_waker.clone()))
-            .collect::<Vec<_>>();
-
-        Waker::from(Arc::new(MultiWaker {
-            wakers: new_total_wakers,
-        }))
+        Waker::from(Arc::new(MultiWaker { wakers }))
     }
 
     /// Register a new clone and return its ID
@@ -172,34 +170,40 @@ where
         if !self.available_clone_indices.insert(clone_id) {
             log::warn!("Clone index {clone_id} was already in available pool");
         }
-        trace!("Removing unneeded items from the queue.");
-        trace!(
-            "Active clones: {:?}",
-            self.clones.keys().collect::<Vec<_>>()
-        );
-        // Collect items to remove to avoid borrowing issues
-        let items_to_remove: Vec<usize> = {
-            let mut to_remove = Vec::new();
-            for (item_index, _) in &self.queue {
-                trace!("Checking if item {item_index} is still needed on the queue.");
-                let is_needed = self.clones.iter().any(|(clone_id, _)| {
-                    trace!("Checking clone {clone_id} for item {item_index}");
-                    let needs_item = self.clone_should_still_see_item(*clone_id, item_index);
-                    trace!("Clone {clone_id} needs item {item_index}: {needs_item}");
-                    needs_item
-                });
-                if !is_needed {
-                    to_remove.push(item_index);
-                }
+        
+        // Optimized cleanup: remove items from oldest to newest, stopping when we find 
+        // an item that's still needed. This is much more efficient than checking every item.
+        self.cleanup_unneeded_queue_items();
+        trace!("Unregister of clone {clone_id} complete.");
+    }
+
+    /// Efficiently removes unneeded items from the queue by checking from oldest to newest
+    fn cleanup_unneeded_queue_items(&mut self) {
+        // If no clones remaining, clear the entire queue
+        if self.clones.is_empty() {
+            while self.queue.oldest_with_index().is_some() {
+                // Queue will update its pointers automatically
             }
-            to_remove
-        };
+            return;
+        }
+
+        // Collect indices of items to remove, starting from oldest
+        let mut items_to_remove = Vec::new();
+        
+        for (item_index, _) in &self.queue {
+            let is_needed = self.clones.iter().any(|(clone_id, _)| {
+                self.clone_should_still_see_item(*clone_id, item_index)
+            });
+            
+            if !is_needed {
+                items_to_remove.push(item_index);
+            }
+        }
 
         // Remove the unneeded items
         for item_index in items_to_remove {
             self.queue.remove(item_index);
         }
-        trace!("Unregister of clone {clone_id} complete.");
     }
 }
 

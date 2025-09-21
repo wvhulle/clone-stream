@@ -64,16 +64,10 @@ impl StateHandler for NoUnseenQueuedThenBasePending {
                     .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
                 {
                     Poll::Ready(item) => {
-                        let waiting_clones: Vec<_> = fork
-                            .clones
-                            .iter()
-                            .filter(|(other_clone_id, state)| {
-                                **other_clone_id != clone_id && state.should_still_see_base_item()
-                            })
-                            .map(|(clone_id, _state)| clone_id)
-                            .collect();
-                        if !waiting_clones.is_empty() {
-                            trace!("Clones {waiting_clones:?} are waiting for the new item.");
+                        if fork.clones.iter().any(|(other_clone_id, state)| {
+                            *other_clone_id != clone_id && state.should_still_see_base_item()
+                        }) {
+                            trace!("Other clones are waiting for the new item.");
                             fork.queue.insert(item.clone());
                         }
                         // If allocation fails, we continue without queuing the item
