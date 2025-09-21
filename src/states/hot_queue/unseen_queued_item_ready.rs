@@ -29,7 +29,7 @@ impl StateHandler for UnseenQueuedItemReady {
     {
         match fork.queue.keys().copied().find(|queue_index| {
             fork.queue
-                .is_after(*queue_index, self.unseen_ready_queue_item_index)
+                .is_strictly_newer_then(*queue_index, self.unseen_ready_queue_item_index)
         }) {
             Some(newer_queue_item_index) => {
                 let item = fork.queue.get(newer_queue_item_index).unwrap().clone();

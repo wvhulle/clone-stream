@@ -43,7 +43,11 @@ where
                     while !self.items.contains_key(&next_oldest) && next_oldest != next_index {
                         next_oldest = (next_oldest + 1) % self.capacity;
                     }
-                    self.oldest = if next_oldest == next_index { None } else { Some(next_oldest) };
+                    self.oldest = if next_oldest == next_index {
+                        None
+                    } else {
+                        Some(next_oldest)
+                    };
                 }
             }
             self.items.insert(next_index, item);
@@ -83,28 +87,23 @@ where
         self.items.get(&index)
     }
 
-    /// Checks if `index_a` comes before `index_b` in ring buffer order.
-    /// This accounts for wraparound: if the indices are on different sides
-    /// of the wraparound point, we need special logic.
-    pub(crate) fn is_before(&self, index_a: usize, index_b: usize) -> bool {
-        if index_a == index_b {
-            return false;
+    pub(crate) fn is_strictly_newer_then(&self, maybe_newer: usize, current: usize) -> bool {
+        match (self.oldest, self.newest) {
+            (Some(oldest), Some(newest)) => {
+                if oldest <= newest {
+                    // Normal case: no wraparound
+                    oldest <= current && current < maybe_newer && maybe_newer <= newest
+                } else {
+                    // Wraparound case
+                    (oldest <= current && current < self.capacity && maybe_newer <= newest)
+                        || (current < maybe_newer && maybe_newer <= newest)
+                        || (oldest <= current
+                            && current < maybe_newer
+                            && maybe_newer < self.capacity)
+                }
+            }
+            _ => false, // Empty queue case
         }
-
-        // Calculate the distance from index_a to index_b in ring buffer terms
-        let forward_distance = if index_b >= index_a {
-            index_b - index_a
-        } else {
-            (self.capacity - index_a) + index_b
-        };
-
-        // If forward distance is less than half the capacity, then index_a comes before index_b
-        forward_distance <= self.capacity / 2
-    }
-
-    /// Checks if `index_a` comes after `index_b` in ring buffer order.
-    pub(crate) fn is_after(&self, index_a: usize, index_b: usize) -> bool {
-        index_a != index_b && !self.is_before(index_a, index_b)
     }
 
     /// Returns true if the queue is empty.
@@ -203,12 +202,12 @@ where
             self.current = if self.remaining > 0 {
                 let mut next_idx = (current_idx + 1) % self.queue.capacity;
                 let start_idx = next_idx;
-                
+
                 // Find the next existing item, wrapping around if necessary
                 while !self.queue.items.contains_key(&next_idx) && next_idx != start_idx {
                     next_idx = (next_idx + 1) % self.queue.capacity;
                 }
-                
+
                 if self.queue.items.contains_key(&next_idx) {
                     Some(next_idx)
                 } else {
@@ -223,49 +222,4 @@ where
 
         None
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ring_buffer_ordering() {
-        let queue: RingQueue<i32> = RingQueue::new(10);
-
-        // Test basic ordering
-        assert!(queue.is_before(0, 1));
-        assert!(queue.is_before(1, 2));
-        assert!(!queue.is_before(2, 1));
-
-        // Test wraparound cases
-        assert!(queue.is_before(8, 9));
-        assert!(queue.is_before(9, 0)); // 9 wraps to 0
-        assert!(queue.is_before(9, 1)); // 9 wraps past 0 to 1
-        assert!(!queue.is_before(0, 9)); // 0 doesn't come before 9 when 9 wraps
-        assert!(!queue.is_before(1, 9)); // 1 doesn't come before 9 when 9 wraps
-
-        // Test middle cases
-        assert!(queue.is_before(8, 2)); // 8 -> 9 -> 0 -> 1 -> 2
-        assert!(!queue.is_before(2, 8)); // 2 -> 3 -> ... -> 8 (longer path)
-    }
-
-    // #[test]
-    // fn test_allocation_and_wraparound() {
-    //     let mut queue: RingQueue<i32> = RingQueue::new(3);
-
-    //     // Insert items to fill capacity
-    //     queue.insert(10);
-    //     queue.insert(20);
-    //     queue.insert(30);
-    //     assert_eq!(queue.len(), 3);
-
-    //     // Should wrap around and overwrite when at capacity
-    //     // assert_eq!(queue.allocate_index(), 0); // wraps back to 0
-    //     queue.insert(40); // overwrites the old value
-
-    //     // Check that old item was overwritten
-    //     assert_eq!(queue.get(0), Some(&40));
-    //     assert_eq!(queue.len(), 3); // size should stay the same
-    // }
 }
