@@ -8,7 +8,7 @@ mod util;
 
 #[tokio::test]
 async fn cancelled_next_queue_empty() {
-    util::log();
+    // util::log();
     let (sender, rx) = tokio::sync::mpsc::unbounded_channel::<usize>();
 
     let input_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);

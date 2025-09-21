@@ -1,6 +1,7 @@
 use std::task::{Context, Poll, Waker};
 
 use futures::{Stream, StreamExt};
+use log::trace;
 
 use super::{
     no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
@@ -19,6 +20,7 @@ pub(crate) struct UnseenQueuedItemReady {
 impl StateHandler for UnseenQueuedItemReady {
     fn handle<BaseStream>(
         &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -31,11 +33,8 @@ impl StateHandler for UnseenQueuedItemReady {
         }) {
             Some(newer_queue_item_index) => {
                 let item = fork.queue.get(newer_queue_item_index).unwrap().clone();
-                if !fork.clones.iter().any(|(clone_id, _state)| {
-                    fork.clone_should_still_see_item(*clone_id, newer_queue_item_index)
-                }) {
-                    fork.queue.remove(newer_queue_item_index);
-                }
+                // Let cleanup handle item removal during clone unregistration
+                trace!("Clone {clone_id}: UnseenQueuedItemReady advancing from index {} to {}", self.unseen_ready_queue_item_index, newer_queue_item_index);
 
                 NewStateAndPollResult {
                     new_state: CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
@@ -50,14 +49,13 @@ impl StateHandler for UnseenQueuedItemReady {
                     .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
                 {
                     Poll::Ready(item) => {
-                        if fork
-                            .clones
-                            .iter()
-                            .any(|(_clone_id, state)| state.should_still_see_base_item())
-                        {
+                        if fork.clones.iter().any(|(other_clone_id, state)| {
+                            *other_clone_id != clone_id && state.should_still_see_base_item()
+                        }) {
                             fork.queue.insert(item.clone());
                         }
                         // If allocation fails, we continue without queuing the item
+                        trace!("Clone {clone_id}: UnseenQueuedItemReady transitioning to NoUnseenQueuedThenBaseReady with new base item");
                         NewStateAndPollResult {
                             new_state: CloneState::NoUnseenQueuedThenBaseReady(
                                 NoUnseenQueuedThenBaseReady,

@@ -26,6 +26,7 @@ impl std::fmt::Debug for QueueEmptyThenBasePending {
 impl StateHandler for QueueEmptyThenBasePending {
     fn handle<BaseStream>(
         &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -43,7 +44,9 @@ impl StateHandler for QueueEmptyThenBasePending {
                     let waiting_clones: Vec<_> = fork
                         .clones
                         .iter()
-                        .filter(|(_clone_id, state)| state.should_still_see_base_item())
+                        .filter(|(other_clone_id, state)| {
+                            **other_clone_id != clone_id && state.should_still_see_base_item()
+                        })
                         .map(|(clone_id, _state)| clone_id)
                         .collect();
                     if waiting_clones.is_empty() {
@@ -73,13 +76,22 @@ impl StateHandler for QueueEmptyThenBasePending {
             }
         } else {
             trace!("The queue is not empty.");
-            let first_queue_index = fork.queue.oldest.unwrap();
+            let Some(first_queue_index) = fork.queue.oldest else {
+                // Queue has items but oldest is None - fallback to empty queue behavior
+                return NewStateAndPollResult {
+                    new_state: CloneState::QueueEmptyThenBasePending(QueueEmptyThenBasePending {
+                        waker: waker.clone(),
+                    }),
+                    poll_result: Poll::Pending,
+                };
+            };
             trace!("The queue is not empty, first item is at index {first_queue_index}.");
+            
             let clones_waiting: Vec<_> = fork
                 .clones
                 .iter()
-                .filter(|(clone_id, _state)| {
-                    fork.clone_should_still_see_item(**clone_id, first_queue_index)
+                .filter(|(other_clone_id, _state)| {
+                    fork.clone_should_still_see_item(**other_clone_id, first_queue_index)
                 })
                 .map(|(clone_id, _state)| clone_id)
                 .collect();
@@ -87,6 +99,7 @@ impl StateHandler for QueueEmptyThenBasePending {
             if clones_waiting.is_empty() {
                 trace!("No other clone is waiting for the first item in the queue.");
                 let popped_item = fork.queue.oldest_with_index().unwrap().1;
+                trace!("Clone {clone_id}: QueueEmptyThenBasePending popping item at index {first_queue_index}");
                 NewStateAndPollResult {
                     new_state: CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
                         unseen_ready_queue_item_index: first_queue_index,
@@ -95,7 +108,8 @@ impl StateHandler for QueueEmptyThenBasePending {
                 }
             } else {
                 trace!("Forks {clones_waiting:?} also need to see the first item in the queue.");
-                let cloned_item = fork.queue.oldest_with_index().unwrap().1.clone();
+                let cloned_item = fork.queue.get(first_queue_index).unwrap().clone();
+                trace!("Clone {clone_id}: QueueEmptyThenBasePending cloning item at index {first_queue_index} (other clones waiting)");
                 NewStateAndPollResult {
                     new_state: CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
                         unseen_ready_queue_item_index: first_queue_index,

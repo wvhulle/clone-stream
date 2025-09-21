@@ -10,7 +10,7 @@ use util::until;
 #[tokio::test]
 
 async fn clone_after_send() {
-    util::log();
+    // util::log();
     let (sender, rx) = tokio::sync::mpsc::unbounded_channel::<char>();
 
     let input_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);

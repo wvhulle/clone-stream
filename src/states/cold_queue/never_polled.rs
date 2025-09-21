@@ -21,6 +21,7 @@ pub(crate) struct NeverPolled;
 impl StateHandler for NeverPolled {
     fn handle<BaseStream>(
         &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -37,7 +38,9 @@ impl StateHandler for NeverPolled {
                 if fork
                     .clones
                     .iter()
-                    .any(|(_clone_id, state)| state.should_still_see_base_item())
+                    .any(|(other_clone_id, state)| {
+                        *other_clone_id != clone_id && state.should_still_see_base_item()
+                    })
                 {
                     trace!("At least one clone is interested in the new item.");
                     fork.queue.insert(item.clone());

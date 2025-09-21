@@ -13,7 +13,7 @@ use util::until;
 
 #[tokio::test]
 async fn poll_before_send() {
-    util::log();
+    // util::log();
     let (sender, rx) = tokio::sync::mpsc::unbounded_channel::<char>();
 
     let rx = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);

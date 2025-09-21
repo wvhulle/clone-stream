@@ -9,7 +9,7 @@ mod util;
 #[tokio::test]
 
 async fn clone_pair_receives() {
-    util::log();
+    // util::log();
     let (sender, rx) = tokio::sync::mpsc::unbounded_channel::<char>();
 
     let input_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);

@@ -32,6 +32,7 @@ impl std::fmt::Debug for NoUnseenQueuedThenBasePending {
 impl StateHandler for NoUnseenQueuedThenBasePending {
     fn handle<BaseStream>(
         &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -66,7 +67,9 @@ impl StateHandler for NoUnseenQueuedThenBasePending {
                         let waiting_clones: Vec<_> = fork
                             .clones
                             .iter()
-                            .filter(|(_clone_id, state)| state.should_still_see_base_item())
+                            .filter(|(other_clone_id, state)| {
+                                **other_clone_id != clone_id && state.should_still_see_base_item()
+                            })
                             .map(|(clone_id, _state)| clone_id)
                             .collect();
                         if !waiting_clones.is_empty() {

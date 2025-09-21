@@ -24,6 +24,7 @@ use crate::Fork;
 pub(crate) trait StateHandler {
     fn handle<BaseStream>(
         &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -56,10 +57,10 @@ impl Default for CloneState {
 impl CloneState {
     pub(crate) fn should_still_see_base_item(&self) -> bool {
         match self {
-            CloneState::QueueEmptyThenBasePending(_)
-            | CloneState::NoUnseenQueuedThenBasePending(_) => true,
             CloneState::NeverPolled(_)
-            | CloneState::QueueEmptyThenBaseReady(_)
+            | CloneState::QueueEmptyThenBasePending(_)
+            | CloneState::NoUnseenQueuedThenBasePending(_) => true,
+            CloneState::QueueEmptyThenBaseReady(_)
             | CloneState::NoUnseenQueuedThenBaseReady(_)
             | CloneState::UnseenQueuedItemReady(_) => false,
         }
@@ -84,6 +85,7 @@ impl CloneState {
 impl StateHandler for CloneState {
     fn handle<BaseStream>(
         &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -91,12 +93,12 @@ impl StateHandler for CloneState {
         BaseStream: Stream<Item: Clone>,
     {
         match self {
-            CloneState::NeverPolled(state) => state.handle(waker, fork),
-            CloneState::QueueEmptyThenBaseReady(state) => state.handle(waker, fork),
-            CloneState::QueueEmptyThenBasePending(state) => state.handle(waker, fork),
-            CloneState::NoUnseenQueuedThenBasePending(state) => state.handle(waker, fork),
-            CloneState::NoUnseenQueuedThenBaseReady(state) => state.handle(waker, fork),
-            CloneState::UnseenQueuedItemReady(state) => state.handle(waker, fork),
+            CloneState::NeverPolled(state) => state.handle(clone_id, waker, fork),
+            CloneState::QueueEmptyThenBaseReady(state) => state.handle(clone_id, waker, fork),
+            CloneState::QueueEmptyThenBasePending(state) => state.handle(clone_id, waker, fork),
+            CloneState::NoUnseenQueuedThenBasePending(state) => state.handle(clone_id, waker, fork),
+            CloneState::NoUnseenQueuedThenBaseReady(state) => state.handle(clone_id, waker, fork),
+            CloneState::UnseenQueuedItemReady(state) => state.handle(clone_id, waker, fork),
         }
     }
 }

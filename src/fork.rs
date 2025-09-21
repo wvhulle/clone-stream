@@ -78,7 +78,7 @@ where
         let NewStateAndPollResult {
             poll_result,
             new_state,
-        } = current_state.handle(clone_waker, self);
+        } = current_state.handle(clone_id, clone_waker, self);
 
         debug!("Clone {clone_id} transitioned from {current_state:?} to {new_state:?}.");
         self.clones.insert(clone_id, new_state);
@@ -145,10 +145,18 @@ where
                     no_unseen_queued_then_base_pending.most_recent_queue_item_index,
                 )
             }
+            CloneState::UnseenQueuedItemReady(unseen_queued_item_ready) => {
+                // Clone is actively consuming items from the queue
+                // It should see items that come before or at its current position
+                // (items it hasn't consumed yet)
+                !self.queue.is_after(
+                    queue_item_index,
+                    unseen_queued_item_ready.unseen_ready_queue_item_index,
+                )
+            }
             CloneState::NeverPolled(_)
             | CloneState::QueueEmptyThenBaseReady(_)
-            | CloneState::NoUnseenQueuedThenBaseReady(_)
-            | CloneState::UnseenQueuedItemReady(_) => false,
+            | CloneState::NoUnseenQueuedThenBaseReady(_) => false,
         }
     }
 
@@ -165,6 +173,7 @@ where
             log::warn!("Clone index {clone_id} was already in available pool");
         }
         trace!("Removing unneeded items from the queue.");
+        trace!("Active clones: {:?}", self.clones.keys().collect::<Vec<_>>());
         // Collect items to remove to avoid borrowing issues
         let items_to_remove: Vec<usize> = {
             let mut to_remove = Vec::new();
@@ -173,7 +182,12 @@ where
                 let is_needed = self
                     .clones
                     .iter()
-                    .any(|(clone_id, _)| self.clone_should_still_see_item(*clone_id, item_index));
+                    .any(|(clone_id, _)| {
+                        trace!("Checking clone {clone_id} for item {item_index}");
+                        let needs_item = self.clone_should_still_see_item(*clone_id, item_index);
+                        trace!("Clone {clone_id} needs item {item_index}: {needs_item}");
+                        needs_item
+                    });
                 if !is_needed {
                     to_remove.push(item_index);
                 }

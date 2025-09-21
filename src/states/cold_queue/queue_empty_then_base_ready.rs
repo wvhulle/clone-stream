@@ -15,6 +15,7 @@ pub(crate) struct QueueEmptyThenBaseReady;
 impl StateHandler for QueueEmptyThenBaseReady {
     fn handle<BaseStream>(
         &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -29,7 +30,9 @@ impl StateHandler for QueueEmptyThenBaseReady {
                 let waiting_clones: Vec<_> = fork
                     .clones
                     .iter()
-                    .filter(|(_clone_id, state)| state.should_still_see_base_item())
+                    .filter(|(other_clone_id, state)| {
+                        **other_clone_id != clone_id && state.should_still_see_base_item()
+                    })
                     .map(|(clone_id, _state)| clone_id)
                     .collect();
                 if waiting_clones.is_empty() {
@@ -40,16 +43,33 @@ impl StateHandler for QueueEmptyThenBaseReady {
                     fork.queue.insert(item.clone());
                     // If allocation fails, we continue without queuing the item
                 }
+                trace!("Clone {clone_id}: QueueEmptyThenBaseReady returning item from base stream");
                 NewStateAndPollResult {
                     new_state: CloneState::QueueEmptyThenBaseReady(QueueEmptyThenBaseReady),
                     poll_result: Poll::Ready(item),
                 }
             }
-            Poll::Pending => NewStateAndPollResult {
-                new_state: CloneState::QueueEmptyThenBasePending(QueueEmptyThenBasePending {
-                    waker: waker.clone(),
-                }),
-                poll_result: Poll::Pending,
+            Poll::Pending => {
+                // If queue has items, this clone has already seen them (since it was in QueueEmptyThenBaseReady)
+                // so transition to NoUnseenQueuedThenBasePending with the most recent queue index
+                if let Some(newest_index) = fork.queue.newest {
+                    NewStateAndPollResult {
+                        new_state: CloneState::NoUnseenQueuedThenBasePending(
+                            crate::states::hot_queue::no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending {
+                                waker: waker.clone(),
+                                most_recent_queue_item_index: newest_index,
+                            },
+                        ),
+                        poll_result: Poll::Pending,
+                    }
+                } else {
+                    NewStateAndPollResult {
+                        new_state: CloneState::QueueEmptyThenBasePending(QueueEmptyThenBasePending {
+                            waker: waker.clone(),
+                        }),
+                        poll_result: Poll::Pending,
+                    }
+                }
             },
         }
     }

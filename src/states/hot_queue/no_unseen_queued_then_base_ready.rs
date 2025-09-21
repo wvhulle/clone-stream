@@ -24,6 +24,7 @@ impl std::fmt::Debug for NoUnseenQueuedThenBaseReady {
 impl StateHandler for NoUnseenQueuedThenBaseReady {
     fn handle<BaseStream>(
         &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -38,7 +39,9 @@ impl StateHandler for NoUnseenQueuedThenBaseReady {
                 let waiting_clones: Vec<_> = fork
                     .clones
                     .iter()
-                    .filter(|(_clone_id, state)| state.should_still_see_base_item())
+                    .filter(|(other_clone_id, state)| {
+                        **other_clone_id != clone_id && state.should_still_see_base_item()
+                    })
                     .map(|(clone_id, _state)| clone_id)
                     .collect();
                 if !waiting_clones.is_empty() {
@@ -62,14 +65,27 @@ impl StateHandler for NoUnseenQueuedThenBaseReady {
                         poll_result: Poll::Pending,
                     }
                 } else {
-                    NewStateAndPollResult {
-                        new_state: CloneState::NoUnseenQueuedThenBasePending(
-                            NoUnseenQueuedThenBasePending {
-                                most_recent_queue_item_index: fork.queue.oldest.unwrap(),
-                                waker: waker.clone(),
-                            },
-                        ),
-                        poll_result: Poll::Pending,
+                    if let Some(oldest_index) = fork.queue.oldest {
+                        NewStateAndPollResult {
+                            new_state: CloneState::NoUnseenQueuedThenBasePending(
+                                NoUnseenQueuedThenBasePending {
+                                    most_recent_queue_item_index: oldest_index,
+                                    waker: waker.clone(),
+                                },
+                            ),
+                            poll_result: Poll::Pending,
+                        }
+                    } else {
+                        // Queue has items but oldest is None - this shouldn't happen
+                        // Fall back to empty queue state
+                        NewStateAndPollResult {
+                            new_state: CloneState::QueueEmptyThenBasePending(
+                                QueueEmptyThenBasePending {
+                                    waker: waker.clone(),
+                                },
+                            ),
+                            poll_result: Poll::Pending,
+                        }
                     }
                 }
             }

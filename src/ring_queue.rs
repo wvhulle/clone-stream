@@ -32,11 +32,22 @@ where
             return;
         }
         if let Some(newest) = self.newest {
-            self.newest = Some((newest + 1) % self.capacity);
-            if self.items.contains_key(&newest) {
-                self.items.remove(&newest);
+            let next_index = (newest + 1) % self.capacity;
+            // Check if we're overwriting an existing item
+            if self.items.contains_key(&next_index) {
+                self.items.remove(&next_index);
+                // If we're removing the oldest item, update oldest pointer
+                if self.oldest == Some(next_index) {
+                    // Find the next oldest item in ring buffer order
+                    let mut next_oldest = (next_index + 1) % self.capacity;
+                    while !self.items.contains_key(&next_oldest) && next_oldest != next_index {
+                        next_oldest = (next_oldest + 1) % self.capacity;
+                    }
+                    self.oldest = if next_oldest == next_index { None } else { Some(next_oldest) };
+                }
             }
-            self.items.insert(newest, item);
+            self.items.insert(next_index, item);
+            self.newest = Some(next_index);
         } else {
             self.newest = Some(0);
             self.oldest = Some(0);
@@ -53,9 +64,7 @@ where
                 .range((index + 1)..self.capacity)
                 .chain(self.items.range(0..index))
                 .next()
-                .as_ref()
-                .map(|(k, _)| *k)
-                .copied();
+                .map(|(k, _)| *k);
         }
         if Some(index) == self.newest {
             // Update newest to the previous item
@@ -64,9 +73,7 @@ where
                 .range((index + 1)..self.capacity)
                 .chain(self.items.range(0..index))
                 .next_back()
-                .as_ref()
-                .map(|(k, _)| *k)
-                .copied();
+                .map(|(k, _)| *k);
         }
         removed
     }
@@ -192,9 +199,21 @@ where
         {
             self.remaining -= 1;
 
-            // Move to next index in ring buffer order
+            // Find the next actual item in ring buffer order
             self.current = if self.remaining > 0 {
-                Some((current_idx + 1) % self.queue.capacity)
+                let mut next_idx = (current_idx + 1) % self.queue.capacity;
+                let start_idx = next_idx;
+                
+                // Find the next existing item, wrapping around if necessary
+                while !self.queue.items.contains_key(&next_idx) && next_idx != start_idx {
+                    next_idx = (next_idx + 1) % self.queue.capacity;
+                }
+                
+                if self.queue.items.contains_key(&next_idx) {
+                    Some(next_idx)
+                } else {
+                    None
+                }
             } else {
                 None
             };
