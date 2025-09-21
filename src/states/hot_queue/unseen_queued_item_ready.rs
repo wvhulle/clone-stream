@@ -18,27 +18,23 @@ pub(crate) struct UnseenQueuedItemReady {
 
 impl StateHandler for UnseenQueuedItemReady {
     fn handle<BaseStream>(
-        self,
+        &self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
     where
         BaseStream: Stream<Item: Clone>,
     {
-        match fork
-            .queue
-            .keys()
-            .copied()
-            .find(|queue_index| *queue_index > self.unseen_ready_queue_item_index)
-        {
+        match fork.queue.keys().copied().find(|queue_index| {
+            fork.queue
+                .is_after(*queue_index, self.unseen_ready_queue_item_index)
+        }) {
             Some(newer_queue_item_index) => {
-                let item = fork.queue.get(&newer_queue_item_index).unwrap().clone();
-                if !fork
-                    .clones
-                    .iter()
-                    .any(|(_clone_id, state)| state.should_still_see_item(newer_queue_item_index))
-                {
-                    fork.queue.remove(&newer_queue_item_index);
+                let item = fork.queue.get(newer_queue_item_index).unwrap().clone();
+                if !fork.clones.iter().any(|(clone_id, _state)| {
+                    fork.clone_should_still_see_item(*clone_id, newer_queue_item_index)
+                }) {
+                    fork.queue.remove(newer_queue_item_index);
                 }
 
                 NewStateAndPollResult {
@@ -58,9 +54,8 @@ impl StateHandler for UnseenQueuedItemReady {
                             .clones
                             .iter()
                             .any(|(_clone_id, state)| state.should_still_see_base_item())
-                            && let Ok(queue_index) = fork.allocate_queue_index()
                         {
-                            fork.queue.insert(queue_index, item.clone());
+                            fork.queue.insert(item.clone());
                         }
                         // If allocation fails, we continue without queuing the item
                         NewStateAndPollResult {

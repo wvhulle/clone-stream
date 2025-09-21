@@ -12,7 +12,6 @@ use hot_queue::{
     no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
     unseen_queued_item_ready::UnseenQueuedItemReady,
 };
-use log::trace;
 
 pub mod cold_queue;
 pub mod hot_queue;
@@ -24,7 +23,7 @@ use crate::Fork;
 /// Trait for handling state transitions in the clone stream state machine
 pub(crate) trait StateHandler {
     fn handle<BaseStream>(
-        self,
+        &self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -56,9 +55,6 @@ impl Default for CloneState {
 
 impl CloneState {
     pub(crate) fn should_still_see_item(&self, queue_item_index: usize) -> bool {
-        trace!(
-            "Checking if state {self:?} should still see queue item with index {queue_item_index}"
-        );
         match self {
             CloneState::QueueEmptyThenBasePending(_) => true,
             CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
@@ -100,7 +96,7 @@ impl CloneState {
 
 impl StateHandler for CloneState {
     fn handle<BaseStream>(
-        self,
+        &self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>

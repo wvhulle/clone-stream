@@ -47,7 +47,7 @@ async fn mass_send() {
 }
 
 #[test_log::test(tokio::test)]
-async fn mass_send_interval() {
+async fn mass_spaced_send() {
     let (mut sender, receiver) = futures::channel::mpsc::unbounded::<usize>();
 
     let template_clone: CloneStream<_> = receiver.into();

@@ -14,28 +14,28 @@ pub(crate) struct QueueEmptyThenBaseReady;
 
 impl StateHandler for QueueEmptyThenBaseReady {
     fn handle<BaseStream>(
-        self,
+        &self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
     where
         BaseStream: Stream<Item: Clone>,
     {
-        trace!("The queue was empty on last poll of this clone, but the base was ready.");
         match fork
             .base_stream
             .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
         {
             Poll::Ready(item) => {
-                if fork
+                let waiting_clones: Vec<_> = fork
                     .clones
                     .iter()
-                    .any(|(_clone_id, state)| state.should_still_see_base_item())
-                {
-                    trace!("At least one clone is interested in the new item.");
-                    if let Ok(queue_index) = fork.allocate_queue_index() {
-                        fork.queue.insert(queue_index, item.clone());
-                    }
+                    .filter(|(_clone_id, state)| state.should_still_see_base_item())
+                    .map(|(clone_id, _state)| clone_id)
+                    .collect();
+                if !waiting_clones.is_empty() {
+                    trace!("Clones {:?} are waiting for the new item.", waiting_clones);
+
+                    fork.queue.insert(item.clone());
                     // If allocation fails, we continue without queuing the item
                 } else {
                     trace!("No other clone is interested in the new item.");

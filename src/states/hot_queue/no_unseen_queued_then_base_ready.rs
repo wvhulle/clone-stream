@@ -1,6 +1,7 @@
 use std::task::{Context, Poll, Waker};
 
 use futures::{Stream, StreamExt};
+use log::trace;
 
 use super::no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending;
 use crate::{
@@ -11,12 +12,18 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct NoUnseenQueuedThenBaseReady;
+
+impl std::fmt::Debug for NoUnseenQueuedThenBaseReady {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NoUnseenQueuedThenBaseReady").finish()
+    }
+}
 
 impl StateHandler for NoUnseenQueuedThenBaseReady {
     fn handle<BaseStream>(
-        self,
+        &self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -28,13 +35,15 @@ impl StateHandler for NoUnseenQueuedThenBaseReady {
             .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
         {
             Poll::Ready(item) => {
-                if fork
+                let waiting_clones: Vec<_> = fork
                     .clones
                     .iter()
-                    .any(|(_clone_id, state)| state.should_still_see_base_item())
-                    && let Ok(queue_index) = fork.allocate_queue_index()
-                {
-                    fork.queue.insert(queue_index, item.clone());
+                    .filter(|(_clone_id, state)| state.should_still_see_base_item())
+                    .map(|(clone_id, _state)| clone_id)
+                    .collect();
+                if !waiting_clones.is_empty() {
+                    trace!("Clones {:?} are waiting for the new item.", waiting_clones);
+                    fork.queue.insert(item.clone());
                 }
                 // If allocation fails, we continue without queuing the item
                 NewStateAndPollResult {
@@ -56,11 +65,7 @@ impl StateHandler for NoUnseenQueuedThenBaseReady {
                     NewStateAndPollResult {
                         new_state: CloneState::NoUnseenQueuedThenBasePending(
                             NoUnseenQueuedThenBasePending {
-                                most_recent_queue_item_index: *fork
-                                    .queue
-                                    .first_entry()
-                                    .unwrap()
-                                    .key(),
+                                most_recent_queue_item_index: fork.queue.oldest.unwrap(),
                                 waker: waker.clone(),
                             },
                         ),

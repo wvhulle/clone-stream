@@ -1,6 +1,7 @@
 use std::task::{Context, Poll, Waker};
 
 use futures::{Stream, StreamExt};
+use log::trace;
 
 use super::{
     no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
@@ -11,35 +12,42 @@ use crate::{
     states::{CloneState, NewStateAndPollResult, StateHandler},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct NoUnseenQueuedThenBasePending {
     pub(crate) waker: Waker,
     pub(crate) most_recent_queue_item_index: usize,
 }
 
+impl std::fmt::Debug for NoUnseenQueuedThenBasePending {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NoUnseenQueuedThenBasePending")
+            .field(
+                "most_recent_queue_item_index",
+                &self.most_recent_queue_item_index,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
 impl StateHandler for NoUnseenQueuedThenBasePending {
     fn handle<BaseStream>(
-        self,
+        &self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
     where
         BaseStream: Stream<Item: Clone>,
     {
-        match fork
-            .queue
-            .keys()
-            .copied()
-            .find(|queue_index| *queue_index > self.most_recent_queue_item_index)
-        {
+        match fork.queue.keys().copied().find(|queue_index| {
+            fork.queue
+                .is_after(*queue_index, self.most_recent_queue_item_index)
+        }) {
             Some(newer_queue_item_index) => {
-                let item = fork.queue.get(&newer_queue_item_index).unwrap().clone();
-                if !fork
-                    .clones
-                    .iter()
-                    .any(|(_clone_id, state)| state.should_still_see_item(newer_queue_item_index))
-                {
-                    fork.queue.remove(&newer_queue_item_index);
+                let item = fork.queue.get(newer_queue_item_index).unwrap().clone();
+                if !fork.clones.iter().any(|(clone_id, _state)| {
+                    fork.clone_should_still_see_item(*clone_id, newer_queue_item_index)
+                }) {
+                    fork.queue.remove(newer_queue_item_index);
                 }
 
                 NewStateAndPollResult {
@@ -55,13 +63,15 @@ impl StateHandler for NoUnseenQueuedThenBasePending {
                     .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
                 {
                     Poll::Ready(item) => {
-                        if fork
+                        let waiting_clones: Vec<_> = fork
                             .clones
                             .iter()
-                            .any(|(_clone_id, state)| state.should_still_see_base_item())
-                            && let Ok(queue_index) = fork.allocate_queue_index()
-                        {
-                            fork.queue.insert(queue_index, item.clone());
+                            .filter(|(_clone_id, state)| state.should_still_see_base_item())
+                            .map(|(clone_id, _state)| clone_id)
+                            .collect();
+                        if !waiting_clones.is_empty() {
+                            trace!("Clones {:?} are waiting for the new item.", waiting_clones);
+                            fork.queue.insert(item.clone());
                         }
                         // If allocation fails, we continue without queuing the item
                         NewStateAndPollResult {

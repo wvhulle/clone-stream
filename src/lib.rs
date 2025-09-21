@@ -25,6 +25,7 @@
 mod clone;
 mod error;
 mod fork;
+mod ring_queue;
 mod states;
 
 pub use clone::CloneStream;

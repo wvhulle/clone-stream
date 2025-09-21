@@ -20,14 +20,14 @@ pub(crate) struct NeverPolled;
 
 impl StateHandler for NeverPolled {
     fn handle<BaseStream>(
-        self,
+        &self,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
     where
         BaseStream: Stream<Item: Clone>,
     {
-        trace!("Currently in state 'NeverPolled'");
+        trace!("This clone has never been polled before.");
         match fork
             .base_stream
             .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
@@ -40,10 +40,7 @@ impl StateHandler for NeverPolled {
                     .any(|(_clone_id, state)| state.should_still_see_base_item())
                 {
                     trace!("At least one clone is interested in the new item.");
-                    if let Ok(queue_index) = fork.allocate_queue_index() {
-                        fork.queue.insert(queue_index, item.clone());
-                    }
-                    // If allocation fails, we continue without queuing the item
+                    fork.queue.insert(item.clone());
                 } else {
                     trace!("No other clone is interested in the new item.");
                 }
@@ -53,19 +50,24 @@ impl StateHandler for NeverPolled {
                     poll_result: Poll::Ready(item),
                 }
             }
-            std::task::Poll::Pending => NewStateAndPollResult {
-                poll_result: Poll::Pending,
-                new_state: if fork.queue.is_empty() {
-                    CloneState::QueueEmptyThenBasePending(QueueEmptyThenBasePending {
-                        waker: waker.clone(),
-                    })
-                } else {
-                    CloneState::NoUnseenQueuedThenBasePending(NoUnseenQueuedThenBasePending {
-                        most_recent_queue_item_index: *fork.queue.last_entry().unwrap().key(),
-                        waker: waker.clone(),
-                    })
-                },
-            },
+            std::task::Poll::Pending => {
+                trace!("The base stream is pending.");
+                NewStateAndPollResult {
+                    poll_result: Poll::Pending,
+                    new_state: if fork.queue.is_empty() {
+                        trace!("The item queue is empty.");
+                        CloneState::QueueEmptyThenBasePending(QueueEmptyThenBasePending {
+                            waker: waker.clone(),
+                        })
+                    } else {
+                        trace!("The item queue is not empty.");
+                        CloneState::NoUnseenQueuedThenBasePending(NoUnseenQueuedThenBasePending {
+                            most_recent_queue_item_index: fork.queue.newest_index().unwrap(),
+                            waker: waker.clone(),
+                        })
+                    },
+                }
+            }
         }
     }
 }
