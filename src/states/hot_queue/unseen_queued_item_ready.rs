@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     Fork,
-    states::{CloneState, NewStateAndPollResult, StateHandler, common::poll_base_stream},
+    states::{CloneState, NewStateAndPollResult, StateHandler, poll_base_stream},
 };
 
 #[derive(Clone, Debug)]

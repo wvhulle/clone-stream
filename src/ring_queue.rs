@@ -113,16 +113,12 @@ where
                 self.oldest = None;
                 self.newest = None;
             } else {
-                let mut next_oldest = (oldest + 1) % self.capacity;
-                while !self.items.contains_key(&next_oldest) && next_oldest != oldest {
-                    next_oldest = (next_oldest + 1) % self.capacity;
-                }
-                if next_oldest == oldest {
-                    self.oldest = None;
-                    self.newest = None;
-                } else {
-                    self.oldest = Some(next_oldest);
-                }
+                // Use BTreeMap's range to efficiently find next item
+                self.oldest = self.items
+                    .range((oldest + 1)..)
+                    .next()
+                    .map(|(k, _)| *k)
+                    .or_else(|| self.items.keys().next().copied());
             }
             return Some((oldest, item));
         }
@@ -185,18 +181,19 @@ where
             self.remaining -= 1;
 
             self.current = if self.remaining > 0 {
-                let mut next_idx = (current_idx + 1) % self.queue.capacity;
-                let start_idx = next_idx;
-
-                while !self.queue.items.contains_key(&next_idx) && next_idx != start_idx {
-                    next_idx = (next_idx + 1) % self.queue.capacity;
-                }
-
-                if self.queue.items.contains_key(&next_idx) {
-                    Some(next_idx)
-                } else {
-                    None
-                }
+                // Use BTreeMap's range for efficient next lookup
+                self.queue.items
+                    .range((current_idx + 1)..)
+                    .next()
+                    .map(|(k, _)| *k)
+                    .or_else(|| {
+                        // Wrap around to beginning if needed
+                        if current_idx > 0 {
+                            self.queue.items.keys().next().copied()
+                        } else {
+                            None
+                        }
+                    })
             } else {
                 None
             };

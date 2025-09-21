@@ -47,6 +47,7 @@ where
     pub(crate) queue: RingQueue<Option<BaseStream::Item>>,
     pub(crate) clones: BTreeMap<usize, CloneState>,
     available_clone_indices: BTreeSet<usize>,
+    next_clone_id: usize,
     config: ForkConfig,
 }
 
@@ -64,6 +65,7 @@ where
             clones: BTreeMap::default(),
             queue: RingQueue::new(config.max_queue_size),
             available_clone_indices: BTreeSet::new(),
+            next_clone_id: 0,
             config,
         }
     }
@@ -86,13 +88,14 @@ where
     }
 
     pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
-        let mut wakers = Vec::new();
+        let capacity = self.clones.len() + 1;
+        let mut wakers = Vec::with_capacity(capacity);
 
         for state in self.clones.values() {
             if state.should_still_see_base_item()
                 && let Some(waker) = state.waker()
             {
-                wakers.push(waker.clone());
+                wakers.push(waker);
             }
         }
         wakers.push(extra_waker.clone());
@@ -108,16 +111,19 @@ where
             return Ok(reused_id);
         }
 
-        let next_clone_index = (0..self.config.max_clone_count)
-            .find(|&id| !self.clones.contains_key(&id))
-            .ok_or(CloneStreamError::MaxClonesExceeded {
+        if self.clones.len() >= self.config.max_clone_count {
+            return Err(CloneStreamError::MaxClonesExceeded {
                 current_count: self.clones.len(),
                 max_allowed: self.config.max_clone_count,
-            })?;
+            });
+        }
 
-        trace!("Registering clone {next_clone_index} (new index).");
-        self.clones.insert(next_clone_index, CloneState::default());
-        Ok(next_clone_index)
+        let clone_id = self.next_clone_id;
+        self.next_clone_id = (self.next_clone_id + 1) % self.config.max_clone_count;
+        
+        trace!("Registering clone {clone_id} (new index).");
+        self.clones.insert(clone_id, CloneState::default());
+        Ok(clone_id)
     }
 
     pub(crate) fn remaining_queued_items(&self, clone_id: usize) -> usize {
@@ -181,21 +187,18 @@ where
             return;
         }
 
-        let mut items_to_remove = Vec::new();
-
-        for (item_index, _) in &self.queue {
+        // Use a single pass to collect and remove items
+        let queue_indices: Vec<usize> = self.queue.keys().copied().collect();
+        
+        for item_index in queue_indices {
             let is_needed = self
                 .clones
-                .iter()
-                .any(|(clone_id, _)| self.clone_should_still_see_item(*clone_id, item_index));
+                .keys()
+                .any(|&clone_id| self.clone_should_still_see_item(clone_id, item_index));
 
             if !is_needed {
-                items_to_remove.push(item_index);
+                self.queue.remove(item_index);
             }
-        }
-
-        for item_index in items_to_remove {
-            self.queue.remove(item_index);
         }
     }
 }

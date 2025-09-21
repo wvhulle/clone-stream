@@ -8,7 +8,7 @@ use crate::{
     states::{
         CloneState, NewStateAndPollResult, StateHandler,
         cold_queue::queue_empty_then_base_pending::QueueEmptyThenBasePending,
-        common::poll_base_stream,
+        poll_base_stream,
     },
 };
 
