@@ -4,7 +4,7 @@ use futures::Stream;
 
 use crate::{
     Fork,
-    states::{NewStateAndPollResult, StateHandler, WakerState, poll_base_stream, transitions},
+    states::{NewStateAndPollResult, StateHandler, poll_base_stream, transitions},
 };
 
 #[derive(Clone)]
@@ -18,12 +18,6 @@ impl std::fmt::Debug for NoUnseenQueuedThenBasePending {
         f.debug_struct("NoUnseenQueuedThenBasePending")
             .field("most_recent_queue_item_index", &self.most_recent_queue_item_index)
             .finish_non_exhaustive()
-    }
-}
-
-impl WakerState for NoUnseenQueuedThenBasePending {
-    fn waker(&self) -> &Waker {
-        &self.waker
     }
 }
 

@@ -3,18 +3,18 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use cold_queue::{
+use empty_queue::{
     never_polled::NeverPolled, queue_empty_then_base_pending::QueueEmptyThenBasePending,
     queue_empty_then_base_ready::QueueEmptyThenBaseReady,
 };
-use hot_queue::{
+use with_queue::{
     no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
     no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
     unseen_queued_item_ready::UnseenQueuedItemReady,
 };
 
-pub mod cold_queue;
-pub mod hot_queue;
+pub mod empty_queue;
+pub mod with_queue;
 
 use futures::{Stream, StreamExt};
 use log::trace;
@@ -88,20 +88,15 @@ impl<T> NewStateAndPollResult<T> {
     }
 }
 
-/// Common trait for states that hold wakers
-pub(crate) trait WakerState {
-    fn waker(&self) -> &Waker;
-}
-
 /// Helper to create common state transitions
 pub(crate) mod transitions {
     use super::*;
     use crate::states::{
-        cold_queue::{
+        empty_queue::{
             queue_empty_then_base_pending::QueueEmptyThenBasePending,
             queue_empty_then_base_ready::QueueEmptyThenBaseReady,
         },
-        hot_queue::{
+        with_queue::{
             no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
             no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
             unseen_queued_item_ready::UnseenQueuedItemReady,

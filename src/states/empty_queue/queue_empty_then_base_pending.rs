@@ -5,9 +5,7 @@ use log::{debug, trace};
 
 use crate::{
     Fork,
-    states::{
-        NewStateAndPollResult, StateHandler, WakerState, transitions,
-    },
+    states::{NewStateAndPollResult, StateHandler, transitions},
 };
 
 #[derive(Clone)]
@@ -17,13 +15,8 @@ pub(crate) struct QueueEmptyThenBasePending {
 
 impl std::fmt::Debug for QueueEmptyThenBasePending {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("QueueEmptyThenBasePending").finish_non_exhaustive()
-    }
-}
-
-impl WakerState for QueueEmptyThenBasePending {
-    fn waker(&self) -> &Waker {
-        &self.waker
+        f.debug_struct("QueueEmptyThenBasePending")
+            .finish_non_exhaustive()
     }
 }
 
