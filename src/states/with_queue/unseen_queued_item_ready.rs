@@ -48,9 +48,10 @@ impl StateHandler for UnseenQueuedItemReady {
                     );
                     NewStateAndPollResult::ready(transitions::to_no_unseen_ready(), item.clone())
                 }
-                Poll::Pending => NewStateAndPollResult::pending(
-                    transitions::to_no_unseen_pending(waker, self.unseen_ready_queue_item_index)
-                ),
+                Poll::Pending => NewStateAndPollResult::pending(transitions::to_no_unseen_pending(
+                    waker,
+                    self.unseen_ready_queue_item_index,
+                )),
             },
         }
     }

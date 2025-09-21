@@ -8,11 +8,10 @@ mod util;
 
 #[tokio::test]
 
-async fn clone_pair_receives() {
-    // util::log();
-    let (sender, rx) = tokio::sync::mpsc::unbounded_channel::<char>();
+async fn clone_receive() {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<char>();
 
-    let input_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+    let input_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
 
     let mut adam = input_stream.fork();
 

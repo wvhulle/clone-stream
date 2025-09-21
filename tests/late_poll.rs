@@ -13,10 +13,9 @@ use util::until;
 
 #[tokio::test]
 async fn poll_before_send() {
-    // util::log();
-    let (sender, rx) = tokio::sync::mpsc::unbounded_channel::<char>();
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<char>();
 
-    let rx = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+    let rx = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
 
     let mut adam = rx.fork();
     let mut bob = adam.clone();

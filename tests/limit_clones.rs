@@ -10,10 +10,8 @@ async fn test_clone_count_limit_error() {
 
     let original = stream.fork_with_limits(1000, 2); // Very small clone limit
 
-    // Create clones until we hit the limit
     let _clone1 = original.clone();
     let _clone2 = original.clone();
 
-    // The third clone should panic
     let _clone3 = original.clone(); // This will panic
 }

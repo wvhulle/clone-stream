@@ -10,7 +10,6 @@ use tokio::{spawn, sync::Barrier, time::sleep};
 /// Test that with limited queue capacity, slow clones miss messages
 #[tokio::test]
 async fn slow_clone_not_miss_cache() {
-    // log();
     let spacing = Duration::from_millis(100);
 
     let interval = tokio::time::interval(spacing);
@@ -25,7 +24,6 @@ async fn slow_clone_not_miss_cache() {
     let barrier = Arc::new(Barrier::new(2));
     let barrier1 = barrier.clone();
 
-    // Clone 1 is fast - gets items immediately
     let clone_0_task = spawn(async move {
         barrier.wait().await;
         sleep(spacing.mul_f32(0.2)).await;
@@ -35,11 +33,9 @@ async fn slow_clone_not_miss_cache() {
 
         let next = clone_0.next().await.unwrap();
         info!("Clone 0 got next item: {next}");
-        // assert_eq!(next - first, 1, "Clone 0      should get consecutive items");
         (first, next)
     });
 
-    // Clone 2 is slow - blocks after first item
     let clone_1_task = spawn(async move {
         barrier1.wait().await;
         sleep(spacing.mul_f32(0.5)).await; // Ensure clone 0 starts first
@@ -54,11 +50,8 @@ async fn slow_clone_not_miss_cache() {
         let next = clone_1.next().await.unwrap();
         info!("Clone 1 got next item: {next}");
 
-        // With limited queue capacity, slow clone should miss items
         let difference = next - first;
         debug!("Clone 1 difference: {difference}");
-        // assert!(difference > 1, "Clone 1 should have missed at least one message (got
-        // difference {})", difference);
         (first, next)
     });
 
@@ -108,7 +101,6 @@ async fn slow_clone_miss_cache() {
         let barrier1 = barrier.clone();
         let barrier2 = barrier.clone();
 
-        // Fast clone 0
         let clone_0_task = spawn(async move {
             barrier.wait().await;
             let first = clone_0.next().await.unwrap();
@@ -116,7 +108,6 @@ async fn slow_clone_miss_cache() {
             (first, second)
         });
 
-        // Fast clone 1
         let clone_1_task = spawn(async move {
             barrier1.wait().await;
             let first = clone_1.next().await.unwrap();
@@ -124,7 +115,6 @@ async fn slow_clone_miss_cache() {
             (first, second)
         });
 
-        // Slow clone 2 - blocks for a significant time
         let clone_2_task = spawn(async move {
             barrier2.wait().await;
             sleep(spacing.mul_f32(0.5)).await; // Start slightly later
@@ -153,11 +143,11 @@ async fn slow_clone_miss_cache() {
         slow_clone_misses.push(missed_2);
 
         debug!(
-            "Sample {sample}: Fast clone missed {best_fast_clone_missed}, Slow clone missed {missed_2}"
+            "Sample {sample}: Fast clone missed {best_fast_clone_missed}, Slow clone missed \
+             {missed_2}"
         );
     }
 
-    // Calculate averages
     #[allow(clippy::cast_precision_loss)]
     let avg_fast_misses = fast_clone_misses.iter().sum::<usize>() as f64 / NUM_SAMPLES as f64;
     #[allow(clippy::cast_precision_loss)]
@@ -168,15 +158,12 @@ async fn slow_clone_miss_cache() {
          clone: {avg_slow_misses:.2}"
     );
 
-    // Statistical assertions: slow clones should miss more items on average
     assert!(
         avg_slow_misses > avg_fast_misses,
         "Slow clones should miss more items on average than fast clones. Fast: \
          {avg_fast_misses:.2}, Slow: {avg_slow_misses:.2}"
     );
 
-    // The difference should be statistically significant (at least 0.5 items on
-    // average)
     assert!(
         avg_slow_misses - avg_fast_misses >= 0.5,
         "Slow clones should miss significantly more items than fast clones. Difference: {:.2}",

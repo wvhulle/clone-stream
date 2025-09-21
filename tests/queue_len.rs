@@ -7,11 +7,10 @@ use util::until;
 mod util;
 
 #[tokio::test]
-async fn cancelled_next_queue_empty() {
-    // util::log();
-    let (sender, rx) = tokio::sync::mpsc::unbounded_channel::<usize>();
+async fn queue_length() {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<usize>();
 
-    let input_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+    let input_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
 
     let mut clone_stream = input_stream.fork();
     let start = Instant::now() + Duration::from_millis(10);

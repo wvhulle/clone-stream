@@ -43,7 +43,10 @@ impl StateHandler for QueueEmptyThenBaseReady {
                 // QueueEmptyThenBaseReady) so transition to
                 // NoUnseenQueuedThenBasePending with the most recent queue index
                 if let Some(newest_index) = fork.queue.newest {
-                    NewStateAndPollResult::pending(transitions::to_no_unseen_pending(waker, newest_index))
+                    NewStateAndPollResult::pending(transitions::to_no_unseen_pending(
+                        waker,
+                        newest_index,
+                    ))
                 } else {
                     NewStateAndPollResult::pending(transitions::to_queue_empty_pending(waker))
                 }

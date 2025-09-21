@@ -17,7 +17,6 @@ impl<T> RingQueue<T>
 where
     T: Clone,
 {
-    // Constructor and basic state methods
     pub(crate) fn new(capacity: usize) -> Self {
         Self {
             items: BTreeMap::new(),
@@ -37,7 +36,6 @@ where
         self.newest = None;
     }
 
-    // Access and query methods
     pub(crate) fn get(&self, index: usize) -> Option<&T> {
         self.items.get(&index)
     }
@@ -46,7 +44,6 @@ where
         self.items.keys()
     }
 
-    // Modification methods
     pub(crate) fn push(&mut self, item: T) {
         if self.capacity == 0 {
             return;
@@ -87,16 +84,31 @@ where
                 .next()
                 .map(|(k, _)| *k);
         }
-        if Some(index) == self.newest {
-            self.newest = self.items.keys().copied().max_by(|&a, &b| {
-                if self.is_newer_than(a, b) {
-                    std::cmp::Ordering::Greater
-                } else if self.is_newer_than(b, a) {
-                    std::cmp::Ordering::Less
-                } else {
-                    std::cmp::Ordering::Equal
+        if Some(index) == self.newest
+            && let Some(oldest) = self.oldest
+        {
+            match oldest.cmp(&index) {
+                std::cmp::Ordering::Equal => {
+                    self.newest = None;
                 }
-            });
+                std::cmp::Ordering::Less => {
+                    // Not wrapping
+                    self.newest = self
+                        .items
+                        .range((oldest)..index)
+                        .next_back()
+                        .map(|(k, _)| *k);
+                }
+                std::cmp::Ordering::Greater => {
+                    // Wrapping
+                    self.newest = self
+                        .items
+                        .range((oldest)..)
+                        .chain(self.items.range(..index))
+                        .next_back()
+                        .map(|(k, _)| *k);
+                }
+            }
         }
         removed
     }
@@ -122,7 +134,6 @@ where
         None
     }
 
-    // Utility and helper methods
     pub(crate) fn is_newer_than(&self, maybe_newer: usize, current: usize) -> bool {
         match (self.oldest, self.newest) {
             (Some(oldest), Some(newest)) => {
@@ -196,16 +207,9 @@ where
                 self.queue
                     .items
                     .range((current_idx + 1)..)
+                    .chain(self.queue.items.range(..current_idx))
                     .next()
                     .map(|(k, _)| *k)
-                    .or_else(|| {
-                        // Wrap around to beginning if needed
-                        if current_idx > 0 {
-                            self.queue.items.keys().next().copied()
-                        } else {
-                            None
-                        }
-                    })
             } else {
                 None
             };

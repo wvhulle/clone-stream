@@ -4,10 +4,7 @@ use futures::Stream;
 
 use crate::{
     Fork,
-    states::{
-        NewStateAndPollResult, StateHandler,
-        poll_base_stream, transitions,
-    },
+    states::{NewStateAndPollResult, StateHandler, poll_base_stream, transitions},
 };
 
 #[derive(Clone)]
@@ -30,12 +27,17 @@ impl StateHandler for NoUnseenQueuedThenBaseReady {
         BaseStream: Stream<Item: Clone>,
     {
         match poll_base_stream(clone_id, waker, fork) {
-            Poll::Ready(item) => NewStateAndPollResult::ready(transitions::to_no_unseen_ready(), item),
+            Poll::Ready(item) => {
+                NewStateAndPollResult::ready(transitions::to_no_unseen_ready(), item)
+            }
             Poll::Pending => {
                 if fork.queue.is_empty() {
                     NewStateAndPollResult::pending(transitions::to_queue_empty_pending(waker))
                 } else if let Some(oldest_index) = fork.queue.oldest {
-                    NewStateAndPollResult::pending(transitions::to_no_unseen_pending(waker, oldest_index))
+                    NewStateAndPollResult::pending(transitions::to_no_unseen_pending(
+                        waker,
+                        oldest_index,
+                    ))
                 } else {
                     // Queue has items but oldest is None - this shouldn't happen
                     // Fall back to empty queue state

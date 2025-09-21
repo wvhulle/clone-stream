@@ -9,11 +9,10 @@ use util::until;
 
 #[tokio::test]
 
-async fn clone_after_send() {
-    // util::log();
-    let (sender, rx) = tokio::sync::mpsc::unbounded_channel::<char>();
+async fn late_clone() {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<char>();
 
-    let input_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+    let input_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
 
     let mut adam = input_stream.fork();
     let mut bob = adam.clone();

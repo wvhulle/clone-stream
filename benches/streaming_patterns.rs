@@ -24,11 +24,9 @@ fn sustained_streaming(c: &mut Criterion) {
                         let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
                         let forked = stream.fork();
 
-                        // Create consumers
                         let clone_count = 3;
                         let clones: Vec<_> = (0..clone_count).map(|_| forked.clone()).collect();
 
-                        // Producer task
                         let producer = tokio::spawn(async move {
                             let mut interval = interval(Duration::from_millis(1));
                             for i in 0..items_per_batch {
@@ -39,7 +37,6 @@ fn sustained_streaming(c: &mut Criterion) {
                             }
                         });
 
-                        // Consumer tasks
                         let consumers: Vec<_> = clones
                             .into_iter()
                             .map(|mut clone| {
@@ -53,7 +50,6 @@ fn sustained_streaming(c: &mut Criterion) {
                             })
                             .collect();
 
-                        // Wait for completion
                         let _ = producer.await;
                         let _results = black_box(join_all(consumers).await);
                     });
@@ -77,7 +73,6 @@ fn bursty_traffic(c: &mut Criterion) {
                 let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
                 let forked = stream.fork();
 
-                // Create mixed-speed consumers
                 let consumers: Vec<_> = (0..4)
                     .map(|idx| {
                         let mut clone = forked.clone();
@@ -95,17 +90,14 @@ fn bursty_traffic(c: &mut Criterion) {
                     })
                     .collect();
 
-                // Send bursts
                 let producer = tokio::spawn(async move {
                     for burst in 0..5 {
-                        // Send burst
                         for item in 0..20 {
                             let data = format!("burst-{burst}-item-{item}");
                             if sender.send(data).is_err() {
                                 break;
                             }
                         }
-                        // Pause between bursts
                         sleep(Duration::from_millis(2)).await;
                     }
                 });
@@ -130,7 +122,6 @@ fn late_clone_joining(c: &mut Criterion) {
                 let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
                 let forked = stream.fork();
 
-                // Early consumers
                 let early_consumers: Vec<_> = (0..2)
                     .map(|_| {
                         let mut clone = forked.clone();
@@ -144,20 +135,17 @@ fn late_clone_joining(c: &mut Criterion) {
                     })
                     .collect();
 
-                // Producer
                 let producer = tokio::spawn(async move {
                     for i in 0..100 {
                         if sender.send(i).is_err() {
                             break;
                         }
                         if i == 30 {
-                            // Small delay to simulate late joining
                             sleep(Duration::from_millis(1)).await;
                         }
                     }
                 });
 
-                // Late consumers (after some delay)
                 sleep(Duration::from_millis(1)).await;
                 let late_consumers: Vec<_> = (0..2)
                     .map(|_| {
