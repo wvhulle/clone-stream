@@ -33,7 +33,7 @@ impl StateHandler for NoUnseenQueuedThenBasePending {
     {
         match fork.queue.keys().copied().find(|queue_index| {
             fork.queue
-                .is_strictly_newer_than(*queue_index, self.most_recent_queue_item_index)
+                .is_newer_than(*queue_index, self.most_recent_queue_item_index)
         }) {
             Some(newer_queue_item_index) => {
                 let item = fork.queue.get(newer_queue_item_index).unwrap().clone();

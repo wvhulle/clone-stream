@@ -148,13 +148,13 @@ where
         match state {
             CloneState::QueueEmptyThenBasePending(_) => true,
             CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
-                self.queue.is_strictly_newer_than(
+                self.queue.is_newer_than(
                     queue_item_index,
                     no_unseen_queued_then_base_pending.most_recent_queue_item_index,
                 )
             }
             CloneState::UnseenQueuedItemReady(unseen_queued_item_ready) => {
-                !self.queue.is_strictly_newer_than(
+                !self.queue.is_newer_than(
                     queue_item_index,
                     unseen_queued_item_ready.unseen_ready_queue_item_index,
                 )
@@ -183,8 +183,7 @@ where
     fn cleanup_unneeded_queue_items(&mut self) {
         // If no clones remaining, clear the entire queue
         if self.clones.is_empty() {
-            while self.queue.oldest_with_index().is_some() {}
-            return;
+            self.queue.clear();
         }
 
         let mut items_to_remove = Vec::new();

@@ -40,7 +40,7 @@ impl StateHandler for QueueEmptyThenBasePending {
                     trace!("The base stream is ready.");
                     if fork.has_other_clones_waiting(clone_id) {
                         trace!("Other clones are interested in the new item.");
-                        fork.queue.insert(item.clone());
+                        fork.queue.push(item.clone());
                         // If allocation fails, we continue without queuing the
                         // item
                     } else {
@@ -72,7 +72,7 @@ impl StateHandler for QueueEmptyThenBasePending {
 
             if clones_waiting.is_empty() {
                 trace!("No other clone is waiting for the first item in the queue.");
-                let popped_item = fork.queue.oldest_with_index().unwrap().1;
+                let popped_item = fork.queue.pop_oldest().unwrap().1;
                 trace!(
                     "Clone {clone_id}: QueueEmptyThenBasePending popping item at index \
                      {first_queue_index}"

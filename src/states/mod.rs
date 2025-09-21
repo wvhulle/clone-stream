@@ -39,7 +39,7 @@ where
             trace!("The base stream is ready.");
             if fork.has_other_clones_waiting(clone_id) {
                 trace!("Other clones are waiting for the new item.");
-                fork.queue.insert(item.clone());
+                fork.queue.push(item.clone());
             } else {
                 trace!("No other clone is interested in the new item.");
             }

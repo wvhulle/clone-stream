@@ -17,6 +17,7 @@ impl<T> RingQueue<T>
 where
     T: Clone,
 {
+    // Constructor and basic state methods
     pub(crate) fn new(capacity: usize) -> Self {
         Self {
             items: BTreeMap::new(),
@@ -26,7 +27,27 @@ where
         }
     }
 
-    pub(crate) fn insert(&mut self, item: T) {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.items.clear();
+        self.oldest = None;
+        self.newest = None;
+    }
+
+    // Access and query methods
+    pub(crate) fn get(&self, index: usize) -> Option<&T> {
+        self.items.get(&index)
+    }
+
+    pub(crate) fn keys(&self) -> std::collections::btree_map::Keys<'_, usize, T> {
+        self.items.keys()
+    }
+
+    // Modification methods
+    pub(crate) fn push(&mut self, item: T) {
         if self.capacity == 0 {
             return;
         }
@@ -68,9 +89,9 @@ where
         }
         if Some(index) == self.newest {
             self.newest = self.items.keys().copied().max_by(|&a, &b| {
-                if self.is_strictly_newer_than(a, b) {
+                if self.is_newer_than(a, b) {
                     std::cmp::Ordering::Greater
-                } else if self.is_strictly_newer_than(b, a) {
+                } else if self.is_newer_than(b, a) {
                     std::cmp::Ordering::Less
                 } else {
                     std::cmp::Ordering::Equal
@@ -80,36 +101,7 @@ where
         removed
     }
 
-    pub(crate) fn get(&self, index: usize) -> Option<&T> {
-        self.items.get(&index)
-    }
-
-    pub(crate) fn is_strictly_newer_than(&self, maybe_newer: usize, current: usize) -> bool {
-        match (self.oldest, self.newest) {
-            (Some(oldest), Some(newest)) => {
-                if oldest <= newest {
-                    oldest <= current && current < maybe_newer && maybe_newer <= newest
-                } else {
-                    (oldest <= current && current < self.capacity && maybe_newer <= newest)
-                        || (current < maybe_newer && maybe_newer <= newest)
-                        || (oldest <= current
-                            && current < maybe_newer
-                            && maybe_newer < self.capacity)
-                }
-            }
-            _ => false,
-        }
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    pub(crate) fn keys(&self) -> std::collections::btree_map::Keys<'_, usize, T> {
-        self.items.keys()
-    }
-
-    pub(crate) fn oldest_with_index(&mut self) -> Option<(usize, T)> {
+    pub fn pop_oldest(&mut self) -> Option<(usize, T)> {
         if let Some(oldest) = self.oldest
             && let Some(item) = self.items.remove(&oldest)
         {
@@ -130,8 +122,22 @@ where
         None
     }
 
-    pub(crate) fn newest_index(&self) -> Option<usize> {
-        self.newest
+    // Utility and helper methods
+    pub(crate) fn is_newer_than(&self, maybe_newer: usize, current: usize) -> bool {
+        match (self.oldest, self.newest) {
+            (Some(oldest), Some(newest)) => {
+                if oldest <= newest {
+                    oldest <= current && current < maybe_newer && maybe_newer <= newest
+                } else {
+                    (oldest <= current && current < self.capacity && maybe_newer <= newest)
+                        || (current < maybe_newer && maybe_newer <= newest)
+                        || (oldest <= current
+                            && current < maybe_newer
+                            && maybe_newer < self.capacity)
+                }
+            }
+            _ => false,
+        }
     }
 }
 

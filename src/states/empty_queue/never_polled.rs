@@ -5,9 +5,7 @@ use log::trace;
 
 use crate::{
     Fork,
-    states::{
-        NewStateAndPollResult, StateHandler, transitions,
-    },
+    states::{NewStateAndPollResult, StateHandler, transitions},
 };
 
 #[derive(Default, Clone, Debug)]
@@ -32,7 +30,7 @@ impl StateHandler for NeverPolled {
                 trace!("The base stream is ready.");
                 if fork.has_other_clones_waiting(clone_id) {
                     trace!("At least one clone is interested in the new item.");
-                    fork.queue.insert(item.clone());
+                    fork.queue.push(item.clone());
                 } else {
                     trace!("No other clone is interested in the new item.");
                 }
@@ -46,7 +44,7 @@ impl StateHandler for NeverPolled {
                     transitions::to_queue_empty_pending(waker)
                 } else {
                     trace!("The item queue is not empty.");
-                    transitions::to_no_unseen_pending(waker, fork.queue.newest_index().unwrap())
+                    transitions::to_no_unseen_pending(waker, fork.queue.newest.unwrap())
                 };
                 NewStateAndPollResult::pending(new_state)
             }

@@ -30,7 +30,7 @@ impl StateHandler for QueueEmptyThenBaseReady {
                     *other_clone_id != clone_id && state.should_still_see_base_item()
                 }) {
                     trace!("Other clones are waiting for the new item.");
-                    fork.queue.insert(item.clone());
+                    fork.queue.push(item.clone());
                     // If allocation fails, we continue without queuing the item
                 } else {
                     trace!("No other clone is interested in the new item.");
