@@ -42,7 +42,7 @@ impl StateHandler for NoUnseenQueuedThenBaseReady {
                     .map(|(clone_id, _state)| clone_id)
                     .collect();
                 if !waiting_clones.is_empty() {
-                    trace!("Clones {:?} are waiting for the new item.", waiting_clones);
+                    trace!("Clones {waiting_clones:?} are waiting for the new item.");
                     fork.queue.insert(item.clone());
                 }
                 // If allocation fails, we continue without queuing the item

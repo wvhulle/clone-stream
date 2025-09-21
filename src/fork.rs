@@ -47,7 +47,6 @@ where
     pub(crate) queue: RingQueue<Option<BaseStream::Item>>,
     pub(crate) clones: BTreeMap<usize, CloneState>,
     available_clone_indices: BTreeSet<usize>,
-    latest_cached_item_index: Option<usize>,
     config: ForkConfig,
 }
 
@@ -64,7 +63,6 @@ where
             base_stream: Box::pin(base_stream),
             clones: BTreeMap::default(),
             queue: RingQueue::new(config.max_queue_size),
-            latest_cached_item_index: None,
             available_clone_indices: BTreeSet::new(),
             config,
         }
@@ -152,14 +150,6 @@ where
             | CloneState::NoUnseenQueuedThenBaseReady(_)
             | CloneState::UnseenQueuedItemReady(_) => false,
         }
-    }
-
-    /// Finds the next queue index after the given index, using ring buffer ordering.
-    pub(crate) fn find_next_queue_index_after(&self, after_index: usize) -> Option<usize> {
-        self.queue
-            .keys()
-            .find(|queue_index| self.queue.is_after(**queue_index, after_index))
-            .copied()
     }
 
     pub(crate) fn unregister(&mut self, clone_id: usize) {

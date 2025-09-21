@@ -54,19 +54,6 @@ impl Default for CloneState {
 }
 
 impl CloneState {
-    pub(crate) fn should_still_see_item(&self, queue_item_index: usize) -> bool {
-        match self {
-            CloneState::QueueEmptyThenBasePending(_) => true,
-            CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
-                no_unseen_queued_then_base_pending.most_recent_queue_item_index < queue_item_index
-            }
-            CloneState::NeverPolled(_)
-            | CloneState::QueueEmptyThenBaseReady(_)
-            | CloneState::NoUnseenQueuedThenBaseReady(_)
-            | CloneState::UnseenQueuedItemReady(_) => false,
-        }
-    }
-
     pub(crate) fn should_still_see_base_item(&self) -> bool {
         match self {
             CloneState::QueueEmptyThenBasePending(_)

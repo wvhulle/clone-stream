@@ -32,13 +32,13 @@ impl StateHandler for QueueEmptyThenBaseReady {
                     .filter(|(_clone_id, state)| state.should_still_see_base_item())
                     .map(|(clone_id, _state)| clone_id)
                     .collect();
-                if !waiting_clones.is_empty() {
-                    trace!("Clones {:?} are waiting for the new item.", waiting_clones);
+                if waiting_clones.is_empty() {
+                    trace!("No other clone is interested in the new item.");
+                } else {
+                    trace!("Clones {waiting_clones:?} are waiting for the new item.");
 
                     fork.queue.insert(item.clone());
                     // If allocation fails, we continue without queuing the item
-                } else {
-                    trace!("No other clone is interested in the new item.");
                 }
                 NewStateAndPollResult {
                     new_state: CloneState::QueueEmptyThenBaseReady(QueueEmptyThenBaseReady),

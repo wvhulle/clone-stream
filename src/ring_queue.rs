@@ -55,7 +55,7 @@ where
                 .next()
                 .as_ref()
                 .map(|(k, _)| *k)
-                .cloned();
+                .copied();
         }
         if Some(index) == self.newest {
             // Update newest to the previous item
@@ -63,29 +63,12 @@ where
                 .items
                 .range((index + 1)..self.capacity)
                 .chain(self.items.range(0..index))
-                .rev()
-                .next()
+                .next_back()
                 .as_ref()
                 .map(|(k, _)| *k)
-                .cloned();
+                .copied();
         }
         removed
-    }
-
-    pub(crate) fn newest(&self) -> Option<&T> {
-        if let Some(newest) = self.newest {
-            Some(&self.items[&newest])
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn oldest(&self) -> Option<&T> {
-        if let Some(oldest) = self.oldest {
-            Some(&self.items[&oldest])
-        } else {
-            None
-        }
     }
 
     /// Gets an item at the given index.
@@ -93,17 +76,7 @@ where
         self.items.get(&index)
     }
 
-    /// Returns the number of items currently in the queue.
-    pub(crate) fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    /// Returns the remaining capacity.
-    pub(crate) fn remaining_capacity(&self) -> usize {
-        self.capacity.saturating_sub(self.items.len())
-    }
-
-    /// Checks if index_a comes before index_b in ring buffer order.
+    /// Checks if `index_a` comes before `index_b` in ring buffer order.
     /// This accounts for wraparound: if the indices are on different sides
     /// of the wraparound point, we need special logic.
     pub(crate) fn is_before(&self, index_a: usize, index_b: usize) -> bool {
@@ -122,7 +95,7 @@ where
         forward_distance <= self.capacity / 2
     }
 
-    /// Checks if index_a comes after index_b in ring buffer order.
+    /// Checks if `index_a` comes after `index_b` in ring buffer order.
     pub(crate) fn is_after(&self, index_a: usize, index_b: usize) -> bool {
         index_a != index_b && !self.is_before(index_a, index_b)
     }
