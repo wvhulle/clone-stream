@@ -5,7 +5,6 @@ use futures::{StreamExt, join};
 use log::{debug, info, warn};
 use std::sync::Arc;
 use tokio::{spawn, sync::Barrier, time::sleep};
-use util::log;
 
 /// Test that with limited queue capacity, slow clones miss messages
 #[tokio::test]
