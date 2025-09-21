@@ -8,7 +8,7 @@ const N_STREAM_CLONES: usize = 100;
 
 const N_ITEMS_SENT: usize = 100;
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 async fn mass_send() {
     let (sender, receiver) = futures::channel::mpsc::unbounded::<usize>();
 
@@ -46,8 +46,8 @@ async fn mass_send() {
     let _ = join!(send, wait_for_receive_all);
 }
 
-#[test_log::test(tokio::test)]
-async fn mass_send_interval() {
+#[tokio::test]
+async fn mass_spaced_send() {
     let (mut sender, receiver) = futures::channel::mpsc::unbounded::<usize>();
 
     let template_clone: CloneStream<_> = receiver.into();

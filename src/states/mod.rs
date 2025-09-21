@@ -1,30 +1,62 @@
 use std::{
     fmt::Debug,
-    task::{Poll, Waker},
+    task::{Context, Poll, Waker},
 };
 
-use cold_queue::{
+use empty_queue::{
     never_polled::NeverPolled, queue_empty_then_base_pending::QueueEmptyThenBasePending,
     queue_empty_then_base_ready::QueueEmptyThenBaseReady,
 };
-use hot_queue::{
+use with_queue::{
     no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
     no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
     unseen_queued_item_ready::UnseenQueuedItemReady,
 };
+
+pub mod empty_queue;
+pub mod with_queue;
+
+use futures::{Stream, StreamExt};
 use log::trace;
 
-pub mod cold_queue;
-pub mod hot_queue;
-
-use futures::Stream;
-
 use crate::Fork;
+
+/// Common utility for polling the base stream and inserting items into queue if
+/// needed
+pub(crate) fn poll_base_stream<BaseStream>(
+    clone_id: usize,
+    waker: &Waker,
+    fork: &mut Fork<BaseStream>,
+) -> Poll<Option<BaseStream::Item>>
+where
+    BaseStream: Stream<Item: Clone>,
+{
+    match fork
+        .base_stream
+        .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
+    {
+        Poll::Ready(item) => {
+            trace!("The base stream is ready.");
+            if fork.has_other_clones_waiting(clone_id) {
+                trace!("Other clones are waiting for the new item.");
+                fork.queue.push(item.clone());
+            } else {
+                trace!("No other clone is interested in the new item.");
+            }
+            Poll::Ready(item)
+        }
+        Poll::Pending => {
+            trace!("The base stream is pending.");
+            Poll::Pending
+        }
+    }
+}
 
 /// Trait for handling state transitions in the clone stream state machine
 pub(crate) trait StateHandler {
     fn handle<BaseStream>(
-        self,
+        &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -36,6 +68,66 @@ pub(crate) trait StateHandler {
 pub(crate) struct NewStateAndPollResult<T> {
     pub(crate) new_state: CloneState,
     pub(crate) poll_result: Poll<T>,
+}
+
+impl<T> NewStateAndPollResult<T> {
+    /// Helper to create a Ready result with a new state
+    pub(crate) fn ready(new_state: CloneState, value: T) -> Self {
+        Self {
+            new_state,
+            poll_result: Poll::Ready(value),
+        }
+    }
+
+    /// Helper to create a Pending result with a new state
+    pub(crate) fn pending(new_state: CloneState) -> Self {
+        Self {
+            new_state,
+            poll_result: Poll::Pending,
+        }
+    }
+}
+
+pub(crate) mod transitions {
+    use super::{CloneState, Waker};
+    use crate::states::{
+        empty_queue::{
+            queue_empty_then_base_pending::QueueEmptyThenBasePending,
+            queue_empty_then_base_ready::QueueEmptyThenBaseReady,
+        },
+        with_queue::{
+            no_unseen_queued_then_base_pending::NoUnseenQueuedThenBasePending,
+            no_unseen_queued_then_base_ready::NoUnseenQueuedThenBaseReady,
+            unseen_queued_item_ready::UnseenQueuedItemReady,
+        },
+    };
+
+    pub(crate) fn to_queue_empty_pending(waker: &Waker) -> CloneState {
+        CloneState::QueueEmptyThenBasePending(QueueEmptyThenBasePending {
+            waker: waker.clone(),
+        })
+    }
+
+    pub(crate) fn to_queue_empty_ready() -> CloneState {
+        CloneState::QueueEmptyThenBaseReady(QueueEmptyThenBaseReady)
+    }
+
+    pub(crate) fn to_no_unseen_pending(waker: &Waker, index: usize) -> CloneState {
+        CloneState::NoUnseenQueuedThenBasePending(NoUnseenQueuedThenBasePending {
+            waker: waker.clone(),
+            most_recent_queue_item_index: index,
+        })
+    }
+
+    pub(crate) fn to_no_unseen_ready() -> CloneState {
+        CloneState::NoUnseenQueuedThenBaseReady(NoUnseenQueuedThenBaseReady)
+    }
+
+    pub(crate) fn to_unseen_item_ready(index: usize) -> CloneState {
+        CloneState::UnseenQueuedItemReady(UnseenQueuedItemReady {
+            unseen_ready_queue_item_index: index,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -55,28 +147,12 @@ impl Default for CloneState {
 }
 
 impl CloneState {
-    pub(crate) fn should_still_see_item(&self, queue_item_index: usize) -> bool {
-        trace!(
-            "Checking if state {self:?} should still see queue item with index {queue_item_index}"
-        );
-        match self {
-            CloneState::QueueEmptyThenBasePending(_) => true,
-            CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
-                no_unseen_queued_then_base_pending.most_recent_queue_item_index < queue_item_index
-            }
-            CloneState::NeverPolled(_)
-            | CloneState::QueueEmptyThenBaseReady(_)
-            | CloneState::NoUnseenQueuedThenBaseReady(_)
-            | CloneState::UnseenQueuedItemReady(_) => false,
-        }
-    }
-
     pub(crate) fn should_still_see_base_item(&self) -> bool {
         match self {
-            CloneState::QueueEmptyThenBasePending(_)
-            | CloneState::NoUnseenQueuedThenBasePending(_) => true,
             CloneState::NeverPolled(_)
-            | CloneState::QueueEmptyThenBaseReady(_)
+            | CloneState::QueueEmptyThenBasePending(_)
+            | CloneState::NoUnseenQueuedThenBasePending(_) => true,
+            CloneState::QueueEmptyThenBaseReady(_)
             | CloneState::NoUnseenQueuedThenBaseReady(_)
             | CloneState::UnseenQueuedItemReady(_) => false,
         }
@@ -100,7 +176,8 @@ impl CloneState {
 
 impl StateHandler for CloneState {
     fn handle<BaseStream>(
-        self,
+        &self,
+        clone_id: usize,
         waker: &Waker,
         fork: &mut Fork<BaseStream>,
     ) -> NewStateAndPollResult<Option<BaseStream::Item>>
@@ -108,12 +185,12 @@ impl StateHandler for CloneState {
         BaseStream: Stream<Item: Clone>,
     {
         match self {
-            CloneState::NeverPolled(state) => state.handle(waker, fork),
-            CloneState::QueueEmptyThenBaseReady(state) => state.handle(waker, fork),
-            CloneState::QueueEmptyThenBasePending(state) => state.handle(waker, fork),
-            CloneState::NoUnseenQueuedThenBasePending(state) => state.handle(waker, fork),
-            CloneState::NoUnseenQueuedThenBaseReady(state) => state.handle(waker, fork),
-            CloneState::UnseenQueuedItemReady(state) => state.handle(waker, fork),
+            CloneState::NeverPolled(state) => state.handle(clone_id, waker, fork),
+            CloneState::QueueEmptyThenBaseReady(state) => state.handle(clone_id, waker, fork),
+            CloneState::QueueEmptyThenBasePending(state) => state.handle(clone_id, waker, fork),
+            CloneState::NoUnseenQueuedThenBasePending(state) => state.handle(clone_id, waker, fork),
+            CloneState::NoUnseenQueuedThenBaseReady(state) => state.handle(clone_id, waker, fork),
+            CloneState::UnseenQueuedItemReady(state) => state.handle(clone_id, waker, fork),
         }
     }
 }
