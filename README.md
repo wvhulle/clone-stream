@@ -17,3 +17,17 @@ clone-stream = "0.3"
 ## Documentation
 
 See the [API documentation](https://docs.rs/clone-stream) for examples and usage details.
+
+## Contributing
+
+Run tests:
+
+```bash
+cargo test
+```
+
+Run benchmarks:
+
+```bash
+cargo bench
+```

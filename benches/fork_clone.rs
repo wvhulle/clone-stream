@@ -60,10 +60,8 @@ fn concurrent_consumption(c: &mut Criterion) {
                         let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
                         let forked = stream.fork();
 
-                        // Create clones
                         let clones: Vec<_> = (0..clone_count).map(|_| forked.clone()).collect();
 
-                        // Spawn consumers
                         let tasks: Vec<_> = clones
                             .into_iter()
                             .map(|mut clone| {
@@ -77,13 +75,11 @@ fn concurrent_consumption(c: &mut Criterion) {
                             })
                             .collect();
 
-                        // Send data
                         for i in 0..100 {
                             sender.send(i).unwrap();
                         }
                         drop(sender);
 
-                        // Wait for completion
                         let _results = join_all(tasks).await;
                     });
                 });
