@@ -38,6 +38,24 @@ pub(crate) struct NewStateAndPollResult<T> {
     pub(crate) poll_result: Poll<T>,
 }
 
+impl<T> NewStateAndPollResult<T> {
+    /// Helper to create a Ready result with a new state
+    pub(crate) fn ready(new_state: CloneState, value: T) -> Self {
+        Self {
+            new_state,
+            poll_result: Poll::Ready(value),
+        }
+    }
+
+    /// Helper to create a Pending result with a new state
+    pub(crate) fn pending(new_state: CloneState) -> Self {
+        Self {
+            new_state,
+            poll_result: Poll::Pending,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum CloneState {
     NeverPolled(NeverPolled),

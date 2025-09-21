@@ -127,6 +127,14 @@ where
             .count()
     }
 
+    /// Helper method to check if any other clone (excluding the specified one) 
+    /// should still see base items. This is a common pattern used across state handlers.
+    pub(crate) fn has_other_clones_waiting(&self, exclude_clone_id: usize) -> bool {
+        self.clones.iter().any(|(clone_id, state)| {
+            *clone_id != exclude_clone_id && state.should_still_see_base_item()
+        })
+    }
+
     /// Checks if a clone should still see an item, using proper ring buffer ordering.
     pub(crate) fn clone_should_still_see_item(
         &self,

@@ -57,13 +57,15 @@ impl StateHandler for QueueEmptyThenBaseReady {
                     }
                 } else {
                     NewStateAndPollResult {
-                        new_state: CloneState::QueueEmptyThenBasePending(QueueEmptyThenBasePending {
-                            waker: waker.clone(),
-                        }),
+                        new_state: CloneState::QueueEmptyThenBasePending(
+                            QueueEmptyThenBasePending {
+                                waker: waker.clone(),
+                            },
+                        ),
                         poll_result: Poll::Pending,
                     }
                 }
-            },
+            }
         }
     }
 }

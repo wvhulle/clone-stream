@@ -49,9 +49,7 @@ impl StateHandler for UnseenQueuedItemReady {
                     .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
                 {
                     Poll::Ready(item) => {
-                        if fork.clones.iter().any(|(other_clone_id, state)| {
-                            *other_clone_id != clone_id && state.should_still_see_base_item()
-                        }) {
+                        if fork.has_other_clones_waiting(clone_id) {
                             fork.queue.insert(item.clone());
                         }
                         // If allocation fails, we continue without queuing the item

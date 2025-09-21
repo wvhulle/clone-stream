@@ -85,7 +85,7 @@ where
     ///
     /// [`ForkStream::fork_with_limits`]: crate::ForkStream::fork_with_limits
     fn clone(&self) -> Self {
-        let mut fork = self.fork.write().unwrap();
+        let mut fork = self.fork.write().expect("Fork lock poisoned during clone");
         let clone_id = fork
             .register()
             .expect("Failed to register clone - clone limit exceeded");
@@ -106,12 +106,12 @@ where
 
     fn poll_next(self: Pin<&mut Self>, current_task: &mut Context) -> Poll<Option<Self::Item>> {
         let waker = current_task.waker();
-        let mut fork = self.fork.write().unwrap();
+        let mut fork = self.fork.write().expect("Fork lock poisoned during poll_next");
         fork.poll_clone(self.id, waker)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let fork = self.fork.read().unwrap();
+        let fork = self.fork.read().expect("Fork lock poisoned during size_hint");
         let (lower, upper) = fork.size_hint();
         let n_cached = fork.remaining_queued_items(self.id);
         (lower + n_cached, upper.map(|u| u + n_cached))
@@ -128,7 +128,7 @@ where
     /// 1. The underlying base stream is terminated
     /// 2. This clone has no remaining queued items to consume
     fn is_terminated(&self) -> bool {
-        let fork = self.fork.read().unwrap();
+        let fork = self.fork.read().expect("Fork lock poisoned during is_terminated");
         fork.is_terminated() && fork.remaining_queued_items(self.id) == 0
     }
 }
@@ -178,6 +178,6 @@ where
     #[must_use]
     pub fn n_queued_items(&self) -> usize {
         trace!("Getting the number of queued items for clone {}.", self.id);
-        self.fork.read().unwrap().remaining_queued_items(self.id)
+        self.fork.read().expect("Fork lock poisoned during n_queued_items").remaining_queued_items(self.id)
     }
 }

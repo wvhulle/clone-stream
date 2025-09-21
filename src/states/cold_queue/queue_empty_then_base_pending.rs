@@ -41,9 +41,7 @@ impl StateHandler for QueueEmptyThenBasePending {
             {
                 Poll::Ready(item) => {
                     trace!("The base stream is ready.");
-                    if fork.clones.iter().any(|(other_clone_id, state)| {
-                        *other_clone_id != clone_id && state.should_still_see_base_item()
-                    }) {
+                    if fork.has_other_clones_waiting(clone_id) {
                         trace!("Other clones are interested in the new item.");
                         fork.queue.insert(item.clone());
                         // If allocation fails, we continue without queuing the
@@ -51,21 +49,20 @@ impl StateHandler for QueueEmptyThenBasePending {
                     } else {
                         trace!("No other clone is interested in the new item.");
                     }
-                    NewStateAndPollResult {
-                        new_state: CloneState::QueueEmptyThenBaseReady(QueueEmptyThenBaseReady),
-                        poll_result: Poll::Ready(item),
-                    }
+                    NewStateAndPollResult::ready(
+                        CloneState::QueueEmptyThenBaseReady(QueueEmptyThenBaseReady),
+                        item,
+                    )
                 }
                 Poll::Pending => {
                     debug!("The base stream is still pending.");
-                    NewStateAndPollResult {
-                        new_state: CloneState::QueueEmptyThenBasePending(
+                    NewStateAndPollResult::pending(
+                        CloneState::QueueEmptyThenBasePending(
                             QueueEmptyThenBasePending {
                                 waker: waker.clone(),
                             },
                         ),
-                        poll_result: Poll::Pending,
-                    }
+                    )
                 }
             }
         } else {

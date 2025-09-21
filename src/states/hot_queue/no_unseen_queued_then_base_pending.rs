@@ -64,9 +64,7 @@ impl StateHandler for NoUnseenQueuedThenBasePending {
                     .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
                 {
                     Poll::Ready(item) => {
-                        if fork.clones.iter().any(|(other_clone_id, state)| {
-                            *other_clone_id != clone_id && state.should_still_see_base_item()
-                        }) {
+                        if fork.has_other_clones_waiting(clone_id) {
                             trace!("Other clones are waiting for the new item.");
                             fork.queue.insert(item.clone());
                         }

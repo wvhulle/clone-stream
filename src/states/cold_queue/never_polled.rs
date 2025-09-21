@@ -35,13 +35,7 @@ impl StateHandler for NeverPolled {
         {
             std::task::Poll::Ready(item) => {
                 trace!("The base stream is ready.");
-                if fork
-                    .clones
-                    .iter()
-                    .any(|(other_clone_id, state)| {
-                        *other_clone_id != clone_id && state.should_still_see_base_item()
-                    })
-                {
+                if fork.has_other_clones_waiting(clone_id) {
                     trace!("At least one clone is interested in the new item.");
                     fork.queue.insert(item.clone());
                 } else {
