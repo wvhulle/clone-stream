@@ -26,6 +26,12 @@ Run tests:
 cargo test
 ```
 
+Test benchmarks
+
+```bash
+cargo bench --bench fork_clone -- --test
+```
+
 Run benchmarks:
 
 ```bash

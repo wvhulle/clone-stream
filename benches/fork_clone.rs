@@ -1,26 +1,9 @@
 use clone_stream::ForkStream;
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use futures::{StreamExt, future::join_all, stream};
-use tokio::runtime::Runtime;
-
-/// Benchmarks basic fork and clone operations
-fn basic_fork_creation(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-
-    c.bench_function("basic_fork_creation", |b| {
-        b.iter(|| {
-            rt.block_on(async {
-                let data: Vec<usize> = (0..100).collect();
-                let stream = stream::iter(data);
-                let _forked = black_box(stream.fork());
-            });
-        });
-    });
-}
+use futures::{StreamExt, stream};
 
 /// Benchmarks clone creation from a forked stream
 fn clone_creation_scaling(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("clone_creation_scaling");
 
     for clone_count in &[1, 2, 4, 8, 16] {
@@ -29,14 +12,12 @@ fn clone_creation_scaling(c: &mut Criterion) {
             clone_count,
             |b, &clone_count| {
                 b.iter(|| {
-                    rt.block_on(async {
-                        let data: Vec<usize> = (0..50).collect();
-                        let stream = stream::iter(data);
-                        let forked = stream.fork();
+                    let data: Vec<usize> = (0..50).collect();
+                    let stream = stream::iter(data);
+                    let forked = stream.fork();
 
-                        let _clones: Vec<_> =
-                            black_box((0..clone_count).map(|_| forked.clone()).collect());
-                    });
+                    let _clones: Vec<_> =
+                        black_box((0..clone_count).map(|_| forked.clone()).collect());
                 });
             },
         );
@@ -46,7 +27,7 @@ fn clone_creation_scaling(c: &mut Criterion) {
 
 /// Benchmarks concurrent consumption with multiple clones
 fn concurrent_consumption(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("concurrent_consumption");
 
     for clone_count in &[2, 4, 8] {
@@ -56,32 +37,22 @@ fn concurrent_consumption(c: &mut Criterion) {
             |b, &clone_count| {
                 b.iter(|| {
                     rt.block_on(async {
-                        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<usize>();
-                        let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
+                        // Use a simple iterator stream to avoid async overhead
+                        let data: Vec<usize> = (0..100).collect();
+                        let stream = stream::iter(data);
                         let forked = stream.fork();
 
                         let clones: Vec<_> = (0..clone_count).map(|_| forked.clone()).collect();
 
-                        let tasks: Vec<_> = clones
-                            .into_iter()
-                            .map(|mut clone| {
-                                tokio::spawn(async move {
-                                    let mut count = 0;
-                                    while (clone.next().await).is_some() {
-                                        count += 1;
-                                    }
-                                    count
-                                })
-                            })
-                            .collect();
-
-                        for i in 0..100 {
-                            sender.send(i).unwrap();
+                        // Actually collect all clones to test clone-stream performance
+                        let mut results = Vec::new();
+                        for clone in clones {
+                            let collected: Vec<_> = clone.collect().await;
+                            results.push(collected);
                         }
-                        drop(sender);
 
-                        let _results = join_all(tasks).await;
-                    });
+                        black_box(results)
+                    })
                 });
             },
         );
@@ -89,10 +60,40 @@ fn concurrent_consumption(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks clone stream overhead vs original stream
+fn clone_overhead_comparison(c: &mut Criterion) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let mut group = c.benchmark_group("clone_overhead");
+    let data: Vec<usize> = (0..1000).collect();
+
+    group.bench_function("original_stream", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                let stream = stream::iter(data.clone());
+                let count = stream.fold(0, |acc, _| async move { acc + 1 }).await;
+                black_box(count)
+            })
+        });
+    });
+
+    group.bench_function("single_clone", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                let stream = stream::iter(data.clone());
+                let forked = stream.fork();
+                let clone = forked.clone();
+                let count = clone.fold(0, |acc, _| async move { acc + 1 }).await;
+                black_box(count)
+            })
+        });
+    });
+
+    group.finish();
+}
 criterion_group!(
     fork_clone_benchmarks,
-    basic_fork_creation,
     clone_creation_scaling,
-    concurrent_consumption
+    concurrent_consumption,
+    clone_overhead_comparison
 );
 criterion_main!(fork_clone_benchmarks);
