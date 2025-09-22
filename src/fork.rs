@@ -144,22 +144,22 @@ where
     ) -> bool {
         let state = self.clones.get(&clone_id).unwrap();
         match state {
-            CloneState::QueueEmptyThenBasePending { .. } => true,
-            CloneState::NoUnseenQueuedThenBasePending { most_recent_queue_item_index, .. } => {
+            CloneState::QueueEmptyPending { .. } => true,
+            CloneState::AllSeenPending { last_seen_index, .. } => {
                 self.queue.is_newer_than(
                     queue_item_index,
-                    *most_recent_queue_item_index,
+                    *last_seen_index,
                 )
             }
-            CloneState::UnseenQueuedItemReady { unseen_ready_queue_item_index } => {
+            CloneState::UnseenReady { unseen_index } => {
                 !self.queue.is_newer_than(
                     queue_item_index,
-                    *unseen_ready_queue_item_index,
+                    *unseen_index,
                 )
             }
-            CloneState::NeverPolled
-            | CloneState::QueueEmptyThenBaseReady
-            | CloneState::NoUnseenQueuedThenBaseReady => false,
+            CloneState::Initial
+            | CloneState::QueueEmpty
+            | CloneState::AllSeen => false,
         }
     }
 
