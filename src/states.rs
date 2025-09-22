@@ -95,8 +95,7 @@ impl CloneState {
 
     pub(crate) fn should_still_see_base_item(&self) -> bool {
         match self {
-            CloneState::QueueEmptyPending { .. }
-            | CloneState::AllSeenPending { .. } => true,
+            CloneState::QueueEmptyPending { .. } | CloneState::AllSeenPending { .. } => true,
             CloneState::QueueEmpty | CloneState::AllSeen | CloneState::UnseenReady { .. } => false,
         }
     }
@@ -106,9 +105,7 @@ impl CloneState {
             CloneState::QueueEmptyPending { waker } | CloneState::AllSeenPending { waker, .. } => {
                 Some(waker.clone())
             }
-            CloneState::QueueEmpty
-            | CloneState::AllSeen
-            | CloneState::UnseenReady { .. } => None,
+            CloneState::QueueEmpty | CloneState::AllSeen | CloneState::UnseenReady { .. } => None,
         }
     }
 
@@ -148,7 +145,7 @@ impl CloneState {
             CloneState::QueueEmpty => {
                 debug!("Clone {clone_id}: Queue empty, polling base stream");
                 self.transition_on_poll(
-                    poll_base_with_queue_check(clone_id, waker, fork, true),
+                    poll_base_with_queue_check(clone_id, waker, fork),
                     CloneState::queue_empty(),
                     next_pending_state(waker, fork),
                 )
@@ -157,7 +154,7 @@ impl CloneState {
                 if fork.queue.is_empty() {
                     debug!("Clone {clone_id}: Queue still empty, polling base stream");
                     self.transition_on_poll(
-                        poll_base_with_queue_check(clone_id, waker, fork, true),
+                        poll_base_with_queue_check(clone_id, waker, fork),
                         CloneState::queue_empty(),
                         CloneState::queue_empty_pending(waker),
                     )
@@ -260,7 +257,6 @@ fn poll_base_with_queue_check<BaseStream>(
     clone_id: usize,
     waker: &Waker,
     fork: &mut Fork<BaseStream>,
-    use_other_clones_check: bool,
 ) -> Poll<Option<BaseStream::Item>>
 where
     BaseStream: Stream<Item: Clone>,
@@ -271,15 +267,8 @@ where
     {
         Poll::Ready(item) => {
             trace!("Base stream ready with item");
-            let should_queue = if use_other_clones_check {
-                fork.has_other_clones_waiting(clone_id)
-            } else {
-                fork.clones.iter().any(|(other_clone_id, state)| {
-                    *other_clone_id != clone_id && state.should_still_see_base_item()
-                })
-            };
 
-            if should_queue {
+            if fork.has_other_clones_waiting(clone_id) {
                 trace!("Queuing item for other interested clones");
                 fork.queue.push(item.clone());
             } else {
@@ -347,7 +336,6 @@ where
         fork.queue.get(first_queue_index).unwrap().clone()
     }
 }
-
 
 fn process_newer_queue_item<BaseStream>(
     fork: &mut Fork<BaseStream>,
