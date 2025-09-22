@@ -34,4 +34,4 @@ name = "fork_clone"
 
 [[bench]]
 harness = false
-name = "streaming_patterns"
+name = "comparative"

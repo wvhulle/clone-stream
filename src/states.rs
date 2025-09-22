@@ -14,13 +14,6 @@ use crate::Fork;
 /// and the shared queue. The state determines how the clone should behave when polled.
 #[derive(Clone, Debug)]
 pub(crate) enum CloneState {
-    /// Initial state when a clone is first created but has never been polled.
-    ///
-    /// When polled, the clone will attempt to read from the base stream. If successful,
-    /// it transitions to `QueueEmpty`. If the base stream is pending, it transitions
-    /// to either `QueueEmptyPending` or `AllSeenPending` depending on queue contents.
-    Initial,
-
     /// The queue is empty and the clone can read directly from the base stream.
     ///
     /// This state indicates that there are no queued items and the clone is ready
@@ -68,7 +61,7 @@ pub(crate) enum CloneState {
 
 impl Default for CloneState {
     fn default() -> Self {
-        Self::Initial
+        Self::QueueEmpty
     }
 }
 
@@ -102,9 +95,7 @@ impl CloneState {
 
     pub(crate) fn should_still_see_base_item(&self) -> bool {
         match self {
-            CloneState::Initial
-            | CloneState::QueueEmptyPending { .. }
-            | CloneState::AllSeenPending { .. } => true,
+            CloneState::QueueEmptyPending { .. } | CloneState::AllSeenPending { .. } => true,
             CloneState::QueueEmpty | CloneState::AllSeen | CloneState::UnseenReady { .. } => false,
         }
     }
@@ -114,10 +105,7 @@ impl CloneState {
             CloneState::QueueEmptyPending { waker } | CloneState::AllSeenPending { waker, .. } => {
                 Some(waker.clone())
             }
-            CloneState::Initial
-            | CloneState::QueueEmpty
-            | CloneState::AllSeen
-            | CloneState::UnseenReady { .. } => None,
+            CloneState::QueueEmpty | CloneState::AllSeen | CloneState::UnseenReady { .. } => None,
         }
     }
 
@@ -154,18 +142,10 @@ impl CloneState {
         BaseStream: Stream<Item: Clone>,
     {
         match self {
-            CloneState::Initial => {
-                debug!("Clone {clone_id}: Initial poll");
-                self.transition_on_poll(
-                    poll_base_with_queue_check(clone_id, waker, fork, true),
-                    CloneState::queue_empty(),
-                    next_pending_state(waker, fork),
-                )
-            }
             CloneState::QueueEmpty => {
                 debug!("Clone {clone_id}: Queue empty, polling base stream");
                 self.transition_on_poll(
-                    poll_base_with_queue_check(clone_id, waker, fork, false),
+                    poll_base_with_queue_check(clone_id, waker, fork),
                     CloneState::queue_empty(),
                     next_pending_state(waker, fork),
                 )
@@ -174,7 +154,7 @@ impl CloneState {
                 if fork.queue.is_empty() {
                     debug!("Clone {clone_id}: Queue still empty, polling base stream");
                     self.transition_on_poll(
-                        poll_base_with_queue_check(clone_id, waker, fork, true),
+                        poll_base_with_queue_check(clone_id, waker, fork),
                         CloneState::queue_empty(),
                         CloneState::queue_empty_pending(waker),
                     )
@@ -277,7 +257,6 @@ fn poll_base_with_queue_check<BaseStream>(
     clone_id: usize,
     waker: &Waker,
     fork: &mut Fork<BaseStream>,
-    use_other_clones_check: bool,
 ) -> Poll<Option<BaseStream::Item>>
 where
     BaseStream: Stream<Item: Clone>,
@@ -288,15 +267,8 @@ where
     {
         Poll::Ready(item) => {
             trace!("Base stream ready with item");
-            let should_queue = if use_other_clones_check {
-                fork.has_other_clones_waiting(clone_id)
-            } else {
-                fork.clones.iter().any(|(other_clone_id, state)| {
-                    *other_clone_id != clone_id && state.should_still_see_base_item()
-                })
-            };
 
-            if should_queue {
+            if fork.has_other_clones_waiting(clone_id) {
                 trace!("Queuing item for other interested clones");
                 fork.queue.push(item.clone());
             } else {
@@ -364,7 +336,6 @@ where
         fork.queue.get(first_queue_index).unwrap().clone()
     }
 }
-
 
 fn process_newer_queue_item<BaseStream>(
     fork: &mut Fork<BaseStream>,
