@@ -44,12 +44,23 @@ fn concurrent_consumption(c: &mut Criterion) {
 
                         let clones: Vec<_> = (0..clone_count).map(|_| forked.clone()).collect();
 
-                        // Actually collect all clones to test clone-stream performance
-                        let mut results = Vec::new();
-                        for clone in clones {
-                            let collected: Vec<_> = clone.collect().await;
-                            results.push(collected);
-                        }
+                        // Concurrently consume all clones - this demonstrates the core clone-stream functionality
+                        let tasks: Vec<_> = clones
+                            .into_iter()
+                            .map(|clone| {
+                                tokio::spawn(async move {
+                                    let collected: Vec<_> = clone.collect().await;
+                                    collected.len() // Return count of items received
+                                })
+                            })
+                            .collect();
+
+                        // Wait for all concurrent consumers to complete
+                        let results: Vec<_> = futures::future::join_all(tasks)
+                            .await
+                            .into_iter()
+                            .map(|result| result.unwrap())
+                            .collect();
 
                         black_box(results)
                     })
