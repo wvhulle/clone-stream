@@ -56,12 +56,9 @@ where
                     let next_oldest = self
                         .items
                         .range((next_index + 1)..)
+                        .chain(self.items.range(..next_index))
                         .map(|(k, _)| *k)
-                        .next()
-                        .or_else(|| {
-                            // Wrap around to beginning if needed
-                            self.items.range(..next_index).map(|(k, _)| *k).next()
-                        });
+                        .next();
                     self.oldest = next_oldest;
                 }
             }

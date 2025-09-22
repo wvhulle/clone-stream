@@ -4,7 +4,7 @@ use std::{
 };
 
 use futures::{Stream, StreamExt};
-use log::trace;
+use log::{debug, trace};
 
 use crate::Fork;
 
@@ -134,7 +134,7 @@ impl CloneState {
     {
         match self {
             CloneState::Initial => {
-                trace!("This clone has never been polled before.");
+                debug!("Clone {clone_id}: Initial poll");
                 transition_return(
                     self,
                     poll_base_with_queue_check(clone_id, waker, fork, true),
@@ -143,7 +143,7 @@ impl CloneState {
                 )
             }
             CloneState::QueueEmpty => {
-                trace!("Clone {clone_id}: QueueEmpty returning item from base stream");
+                debug!("Clone {clone_id}: Queue empty, polling base stream");
                 transition_return(
                     self,
                     poll_base_with_queue_check(clone_id, waker, fork, false),
@@ -153,7 +153,7 @@ impl CloneState {
             }
             CloneState::QueueEmptyPending { .. } => {
                 if fork.queue.is_empty() {
-                    trace!("Queue is empty");
+                    debug!("Clone {clone_id}: Queue still empty, polling base stream");
                     transition_return(
                         self,
                         poll_base_with_queue_check(clone_id, waker, fork, true),
@@ -161,14 +161,16 @@ impl CloneState {
                         CloneState::queue_empty_pending(waker),
                     )
                 } else {
-                    trace!("The queue is not empty.");
+                    debug!("Clone {clone_id}: Queue now has items");
                     let Some(first_queue_index) = fork.queue.oldest else {
+                        debug!("Clone {clone_id}: Queue oldest index unavailable, staying pending");
                         *self = CloneState::queue_empty_pending(waker);
                         return Poll::Pending;
                     };
-                    trace!("The queue is not empty, first item is at index {first_queue_index}.");
+                    trace!("Clone {clone_id}: Processing queue item at index {first_queue_index}");
 
                     let item = process_oldest_queue_item(fork, clone_id, first_queue_index);
+                    debug!("Clone {clone_id}: Transitioning to UnseenReady at index {first_queue_index}");
                     *self = CloneState::unseen_ready(first_queue_index);
                     Poll::Ready(item)
                 }
@@ -178,9 +180,11 @@ impl CloneState {
             } => {
                 let last_seen = *last_seen_index;
                 if let Some((newer_index, item)) = process_newer_queue_item(fork, last_seen, true) {
+                    debug!("Clone {clone_id}: Found newer queue item at index {newer_index}");
                     *self = CloneState::unseen_ready(newer_index);
                     Poll::Ready(item)
                 } else {
+                    debug!("Clone {clone_id}: No newer queue items, polling base stream");
                     transition_return(
                         self,
                         poll_base_stream(clone_id, waker, fork),
@@ -190,6 +194,7 @@ impl CloneState {
                 }
             }
             CloneState::AllSeen => {
+                debug!("Clone {clone_id}: All seen, polling base stream");
                 let pending_state = if let Some(oldest_index) = fork.queue.oldest {
                     CloneState::all_seen_pending(waker, oldest_index)
                 } else {
@@ -205,16 +210,11 @@ impl CloneState {
             CloneState::UnseenReady { unseen_index } => {
                 let unseen = *unseen_index;
                 if let Some((newer_index, item)) = process_newer_queue_item(fork, unseen, false) {
-                    trace!(
-                        "Clone {clone_id}: UnseenReady advancing from index {unseen} to {newer_index}"
-                    );
+                    debug!("Clone {clone_id}: Advancing from index {unseen} to {newer_index}");
                     *self = CloneState::unseen_ready(newer_index);
                     Poll::Ready(item)
                 } else {
-                    trace!(
-                        "Clone {clone_id}: UnseenReady transitioning to \
-                         AllSeen with new base item"
-                    );
+                    debug!("Clone {clone_id}: No more unseen items, transitioning to AllSeen");
                     transition_return(
                         self,
                         poll_base_stream(clone_id, waker, fork),
@@ -240,17 +240,17 @@ where
         .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
     {
         Poll::Ready(item) => {
-            trace!("The base stream is ready.");
+            trace!("Base stream ready with item");
             if fork.has_other_clones_waiting(clone_id) {
-                trace!("Other clones are waiting for the new item.");
+                trace!("Queuing item for other waiting clones");
                 fork.queue.push(item.clone());
             } else {
-                trace!("No other clone is interested in the new item.");
+                trace!("No other clones waiting, not queuing item");
             }
             Poll::Ready(item)
         }
         Poll::Pending => {
-            trace!("The base stream is pending.");
+            trace!("Base stream pending");
             Poll::Pending
         }
     }
@@ -270,7 +270,7 @@ where
         .poll_next_unpin(&mut Context::from_waker(&fork.waker(waker)))
     {
         Poll::Ready(item) => {
-            trace!("The base stream is ready.");
+            trace!("Base stream ready with item");
             let should_queue = if use_other_clones_check {
                 fork.has_other_clones_waiting(clone_id)
             } else {
@@ -280,15 +280,15 @@ where
             };
 
             if should_queue {
-                trace!("Other clones are waiting for the new item.");
+                trace!("Queuing item for other interested clones");
                 fork.queue.push(item.clone());
             } else {
-                trace!("No other clone is interested in the new item.");
+                trace!("No other clones need this item");
             }
             Poll::Ready(item)
         }
         Poll::Pending => {
-            trace!("The base stream is pending.");
+            trace!("Base stream pending");
             Poll::Pending
         }
     }
@@ -335,21 +335,11 @@ where
         .collect();
 
     if clones_waiting.is_empty() {
-        trace!("No other clone is waiting for the first item in the queue.");
-        let popped_item = fork.queue.pop_oldest().unwrap().1;
-        trace!(
-            "Clone {clone_id}: QueueEmptyThenBasePending popping item at index \
-             {first_queue_index}"
-        );
-        popped_item
+        trace!("Clone {clone_id}: Popping queue item at index {first_queue_index} (no other clones waiting)");
+        fork.queue.pop_oldest().unwrap().1
     } else {
-        trace!("Forks {clones_waiting:?} also need to see the first item in the queue.");
-        let cloned_item = fork.queue.get(first_queue_index).unwrap().clone();
-        trace!(
-            "Clone {clone_id}: QueueEmptyThenBasePending cloning item at index \
-             {first_queue_index} (other clones waiting)"
-        );
-        cloned_item
+        trace!("Clone {clone_id}: Cloning queue item at index {first_queue_index} (clones {clones_waiting:?} also waiting)");
+        fork.queue.get(first_queue_index).unwrap().clone()
     }
 }
 
@@ -359,12 +349,15 @@ fn transition_return<Item>(
     ready_state: CloneState,
     pending_state: CloneState,
 ) -> Poll<Option<Item>> {
+    let original_state = format!("{state:?}");
     match poll_result {
         Poll::Ready(item) => {
+            debug!("State transition: {original_state} -> {ready_state:?}");
             *state = ready_state;
             Poll::Ready(item)
         }
         Poll::Pending => {
+            debug!("State transition: {original_state} -> {pending_state:?}");
             *state = pending_state;
             Poll::Pending
         }
