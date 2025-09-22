@@ -22,14 +22,13 @@
 //! // Both clones receive all items independently
 //! # }
 //! ```
-mod clean_log;
+pub mod clean_log;
 mod clone;
 mod error;
 mod fork;
-mod ring_queue;
+pub mod ring_queue;
 mod states;
 
-pub use clean_log::log;
 pub use clone::CloneStream;
 pub use error::{CloneStreamError, Result};
 use fork::Fork;
