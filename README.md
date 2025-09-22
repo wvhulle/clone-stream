@@ -34,7 +34,13 @@ Test benchmarks
 cargo bench --bench fork_clone -- --test
 ```
 
-Run benchmarks:
+Run standard benchmarks:
+
+```bash
+cargo bench --bench fork_clone
+```
+
+Run all (including comparative) benchmarks:
 
 ```bash
 cargo bench

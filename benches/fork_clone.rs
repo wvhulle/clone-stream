@@ -71,40 +71,9 @@ fn concurrent_consumption(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmarks clone stream overhead vs original stream
-fn clone_overhead_comparison(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let mut group = c.benchmark_group("clone_overhead");
-    let data: Vec<usize> = (0..1000).collect();
-
-    group.bench_function("original_stream", |b| {
-        b.iter(|| {
-            rt.block_on(async {
-                let stream = stream::iter(data.clone());
-                let count = stream.fold(0, |acc, _| async move { acc + 1 }).await;
-                black_box(count)
-            })
-        });
-    });
-
-    group.bench_function("single_clone", |b| {
-        b.iter(|| {
-            rt.block_on(async {
-                let stream = stream::iter(data.clone());
-                let forked = stream.fork();
-                let clone = forked.clone();
-                let count = clone.fold(0, |acc, _| async move { acc + 1 }).await;
-                black_box(count)
-            })
-        });
-    });
-
-    group.finish();
-}
 criterion_group!(
     fork_clone_benchmarks,
     clone_creation_scaling,
-    concurrent_consumption,
-    clone_overhead_comparison
+    concurrent_consumption
 );
 criterion_main!(fork_clone_benchmarks);
