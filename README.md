@@ -28,13 +28,13 @@ Run tests:
 cargo test
 ```
 
-Test benchmarks
+Test run a single benchmark pass:
 
 ```bash
 cargo bench --bench fork_clone -- --test
 ```
 
-Run standard benchmarks:
+Run standard statistical benchmarks:
 
 ```bash
 cargo bench --bench fork_clone
