@@ -157,8 +157,7 @@ where
                     *unseen_index,
                 )
             }
-            CloneState::Initial
-            | CloneState::QueueEmpty
+            CloneState::QueueEmpty
             | CloneState::AllSeen => false,
         }
     }

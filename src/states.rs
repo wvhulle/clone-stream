@@ -14,13 +14,6 @@ use crate::Fork;
 /// and the shared queue. The state determines how the clone should behave when polled.
 #[derive(Clone, Debug)]
 pub(crate) enum CloneState {
-    /// Initial state when a clone is first created but has never been polled.
-    ///
-    /// When polled, the clone will attempt to read from the base stream. If successful,
-    /// it transitions to `QueueEmpty`. If the base stream is pending, it transitions
-    /// to either `QueueEmptyPending` or `AllSeenPending` depending on queue contents.
-    Initial,
-
     /// The queue is empty and the clone can read directly from the base stream.
     ///
     /// This state indicates that there are no queued items and the clone is ready
@@ -68,7 +61,7 @@ pub(crate) enum CloneState {
 
 impl Default for CloneState {
     fn default() -> Self {
-        Self::Initial
+        Self::QueueEmpty
     }
 }
 
@@ -102,8 +95,7 @@ impl CloneState {
 
     pub(crate) fn should_still_see_base_item(&self) -> bool {
         match self {
-            CloneState::Initial
-            | CloneState::QueueEmptyPending { .. }
+            CloneState::QueueEmptyPending { .. }
             | CloneState::AllSeenPending { .. } => true,
             CloneState::QueueEmpty | CloneState::AllSeen | CloneState::UnseenReady { .. } => false,
         }
@@ -114,8 +106,7 @@ impl CloneState {
             CloneState::QueueEmptyPending { waker } | CloneState::AllSeenPending { waker, .. } => {
                 Some(waker.clone())
             }
-            CloneState::Initial
-            | CloneState::QueueEmpty
+            CloneState::QueueEmpty
             | CloneState::AllSeen
             | CloneState::UnseenReady { .. } => None,
         }
@@ -154,18 +145,10 @@ impl CloneState {
         BaseStream: Stream<Item: Clone>,
     {
         match self {
-            CloneState::Initial => {
-                debug!("Clone {clone_id}: Initial poll");
-                self.transition_on_poll(
-                    poll_base_with_queue_check(clone_id, waker, fork, true),
-                    CloneState::queue_empty(),
-                    next_pending_state(waker, fork),
-                )
-            }
             CloneState::QueueEmpty => {
                 debug!("Clone {clone_id}: Queue empty, polling base stream");
                 self.transition_on_poll(
-                    poll_base_with_queue_check(clone_id, waker, fork, false),
+                    poll_base_with_queue_check(clone_id, waker, fork, true),
                     CloneState::queue_empty(),
                     next_pending_state(waker, fork),
                 )
