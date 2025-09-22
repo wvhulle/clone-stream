@@ -120,6 +120,27 @@ impl CloneState {
             | CloneState::UnseenReady { .. } => None,
         }
     }
+
+    fn transition_on_poll<Item>(
+        &mut self,
+        poll_result: Poll<Option<Item>>,
+        ready_state: CloneState,
+        pending_state: CloneState,
+    ) -> Poll<Option<Item>> {
+        let original_state = format!("{self:?}");
+        match poll_result {
+            Poll::Ready(item) => {
+                debug!("State transition: {original_state} -> {ready_state:?}");
+                *self = ready_state;
+                Poll::Ready(item)
+            }
+            Poll::Pending => {
+                debug!("State transition: {original_state} -> {pending_state:?}");
+                *self = pending_state;
+                Poll::Pending
+            }
+        }
+    }
 }
 
 impl CloneState {
@@ -135,8 +156,7 @@ impl CloneState {
         match self {
             CloneState::Initial => {
                 debug!("Clone {clone_id}: Initial poll");
-                transition_return(
-                    self,
+                self.transition_on_poll(
                     poll_base_with_queue_check(clone_id, waker, fork, true),
                     CloneState::queue_empty(),
                     next_pending_state(waker, fork),
@@ -144,8 +164,7 @@ impl CloneState {
             }
             CloneState::QueueEmpty => {
                 debug!("Clone {clone_id}: Queue empty, polling base stream");
-                transition_return(
-                    self,
+                self.transition_on_poll(
                     poll_base_with_queue_check(clone_id, waker, fork, false),
                     CloneState::queue_empty(),
                     next_pending_state(waker, fork),
@@ -154,8 +173,7 @@ impl CloneState {
             CloneState::QueueEmptyPending { .. } => {
                 if fork.queue.is_empty() {
                     debug!("Clone {clone_id}: Queue still empty, polling base stream");
-                    transition_return(
-                        self,
+                    self.transition_on_poll(
                         poll_base_with_queue_check(clone_id, waker, fork, true),
                         CloneState::queue_empty(),
                         CloneState::queue_empty_pending(waker),
@@ -187,8 +205,7 @@ impl CloneState {
                     Poll::Ready(item)
                 } else {
                     debug!("Clone {clone_id}: No newer queue items, polling base stream");
-                    transition_return(
-                        self,
+                    self.transition_on_poll(
                         poll_base_stream(clone_id, waker, fork),
                         CloneState::all_seen(),
                         CloneState::all_seen_pending(waker, last_seen),
@@ -202,8 +219,7 @@ impl CloneState {
                 } else {
                     CloneState::queue_empty_pending(waker)
                 };
-                transition_return(
-                    self,
+                self.transition_on_poll(
                     poll_base_stream(clone_id, waker, fork),
                     CloneState::all_seen(),
                     pending_state,
@@ -217,8 +233,7 @@ impl CloneState {
                     Poll::Ready(item)
                 } else {
                     debug!("Clone {clone_id}: No more unseen items, transitioning to AllSeen");
-                    transition_return(
-                        self,
+                    self.transition_on_poll(
                         poll_base_stream(clone_id, waker, fork),
                         CloneState::all_seen(),
                         CloneState::all_seen_pending(waker, unseen),
@@ -350,26 +365,6 @@ where
     }
 }
 
-fn transition_return<Item>(
-    state: &mut CloneState,
-    poll_result: Poll<Option<Item>>,
-    ready_state: CloneState,
-    pending_state: CloneState,
-) -> Poll<Option<Item>> {
-    let original_state = format!("{state:?}");
-    match poll_result {
-        Poll::Ready(item) => {
-            debug!("State transition: {original_state} -> {ready_state:?}");
-            *state = ready_state;
-            Poll::Ready(item)
-        }
-        Poll::Pending => {
-            debug!("State transition: {original_state} -> {pending_state:?}");
-            *state = pending_state;
-            Poll::Pending
-        }
-    }
-}
 
 fn process_newer_queue_item<BaseStream>(
     fork: &mut Fork<BaseStream>,
