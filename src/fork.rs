@@ -12,7 +12,7 @@ use log::{debug, trace, warn};
 use crate::{
     error::{CloneStreamError, Result},
     ring_queue::RingQueue,
-    states::{CloneState, NewStateAndPollResult, StateHandler},
+    states::CloneState,
 };
 
 /// Maximum number of clones that can be registered simultaneously.
@@ -75,15 +75,13 @@ where
         clone_id: usize,
         clone_waker: &Waker,
     ) -> Poll<Option<BaseStream::Item>> {
-        let current_state = self.clones.remove(&clone_id).unwrap();
+        let mut current_state = self.clones.remove(&clone_id).unwrap();
         debug!("State of clone {clone_id} is {current_state:?}.");
-        let NewStateAndPollResult {
-            poll_result,
-            new_state,
-        } = current_state.handle(clone_id, clone_waker, self);
-
-        debug!("Clone {clone_id} transitioned from {current_state:?} to {new_state:?}.");
-        self.clones.insert(clone_id, new_state);
+        
+        let poll_result = current_state.step(clone_id, clone_waker, self);
+        
+        debug!("Clone {clone_id} transitioned to {current_state:?}.");
+        self.clones.insert(clone_id, current_state);
         poll_result
     }
 
@@ -146,22 +144,22 @@ where
     ) -> bool {
         let state = self.clones.get(&clone_id).unwrap();
         match state {
-            CloneState::QueueEmptyThenBasePending(_) => true,
-            CloneState::NoUnseenQueuedThenBasePending(no_unseen_queued_then_base_pending) => {
+            CloneState::QueueEmptyPending { .. } => true,
+            CloneState::AllSeenPending { last_seen_index, .. } => {
                 self.queue.is_newer_than(
                     queue_item_index,
-                    no_unseen_queued_then_base_pending.most_recent_queue_item_index,
+                    *last_seen_index,
                 )
             }
-            CloneState::UnseenQueuedItemReady(unseen_queued_item_ready) => {
+            CloneState::UnseenReady { unseen_index } => {
                 !self.queue.is_newer_than(
                     queue_item_index,
-                    unseen_queued_item_ready.unseen_ready_queue_item_index,
+                    *unseen_index,
                 )
             }
-            CloneState::NeverPolled(_)
-            | CloneState::QueueEmptyThenBaseReady(_)
-            | CloneState::NoUnseenQueuedThenBaseReady(_) => false,
+            CloneState::Initial
+            | CloneState::QueueEmpty
+            | CloneState::AllSeen => false,
         }
     }
 
