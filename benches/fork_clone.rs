@@ -30,6 +30,8 @@ fn concurrent_consumption(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("concurrent_consumption");
 
+    group.sample_size(20);
+
     for clone_count in &[2, 4, 8] {
         group.bench_with_input(
             BenchmarkId::new("clones", clone_count),
@@ -37,8 +39,7 @@ fn concurrent_consumption(c: &mut Criterion) {
             |b, &clone_count| {
                 b.iter(|| {
                     rt.block_on(async {
-                        // Use a simple iterator stream to avoid async overhead
-                        let data: Vec<usize> = (0..100).collect();
+                        let data: Vec<usize> = (0..50).collect();
                         let stream = stream::iter(data);
                         let forked = stream.fork();
 

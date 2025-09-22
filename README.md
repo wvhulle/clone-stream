@@ -5,6 +5,8 @@
 
 Turn any `Stream` into a cloneable stream where each clone receives all items independently.
 
+For more background information, see my [slides](https://github.com/wvhulle/streams-eurorust-2025) for a presentation on EuroRust 2025.
+
 ## Installation
 
 Add to your `Cargo.toml`:
@@ -26,13 +28,13 @@ Run tests:
 cargo test
 ```
 
-Test benchmarks
+Test run a single benchmark pass:
 
 ```bash
 cargo bench --bench fork_clone -- --test
 ```
 
-Run standard benchmarks:
+Run standard statistical benchmarks:
 
 ```bash
 cargo bench --bench fork_clone
