@@ -170,7 +170,9 @@ impl CloneState {
                     trace!("Clone {clone_id}: Processing queue item at index {first_queue_index}");
 
                     let item = process_oldest_queue_item(fork, clone_id, first_queue_index);
-                    debug!("Clone {clone_id}: Transitioning to UnseenReady at index {first_queue_index}");
+                    debug!(
+                        "Clone {clone_id}: Transitioning to UnseenReady at index {first_queue_index}"
+                    );
                     *self = CloneState::unseen_ready(first_queue_index);
                     Poll::Ready(item)
                 }
@@ -299,6 +301,7 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fork.queue
+        .items
         .keys()
         .copied()
         .find(|queue_index| fork.queue.is_newer_than(*queue_index, current_index))
@@ -335,10 +338,14 @@ where
         .collect();
 
     if clones_waiting.is_empty() {
-        trace!("Clone {clone_id}: Popping queue item at index {first_queue_index} (no other clones waiting)");
-        fork.queue.pop_oldest().unwrap().1
+        trace!(
+            "Clone {clone_id}: Popping queue item at index {first_queue_index} (no other clones waiting)"
+        );
+        fork.queue.pop_oldest().unwrap()
     } else {
-        trace!("Clone {clone_id}: Cloning queue item at index {first_queue_index} (clones {clones_waiting:?} also waiting)");
+        trace!(
+            "Clone {clone_id}: Cloning queue item at index {first_queue_index} (clones {clones_waiting:?} also waiting)"
+        );
         fork.queue.get(first_queue_index).unwrap().clone()
     }
 }
