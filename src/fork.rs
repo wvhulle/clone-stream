@@ -155,7 +155,7 @@ where
     }
 
     /// Find queue items that no active clone needs anymore
-    fn find_unneeded_queue_items(&self) -> impl Iterator<Item = usize> + '_ {
+    fn find_unneeded_queue_items(&self) -> impl Iterator<Item = usize> {
         (&self.queue).into_iter().filter_map(|(item_index, _)| {
             let is_needed = (0..self.clones.len())
                 .any(|clone_id| self.clone_should_still_see_item(clone_id, item_index));
@@ -205,7 +205,6 @@ where
             return;
         }
 
-        // Remove items that no clone needs anymore
         self.find_unneeded_queue_items()
             .collect::<Vec<_>>()
             .into_iter()
