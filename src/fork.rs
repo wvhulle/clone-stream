@@ -76,9 +76,9 @@ where
     ) -> Poll<Option<BaseStream::Item>> {
         let mut current_state = self.clones[clone_id].take().unwrap();
         debug!("State of clone {clone_id} is {current_state:?}.");
-        
+
         let poll_result = current_state.step(clone_id, clone_waker, self);
-        
+
         debug!("Clone {clone_id} transitioned to {current_state:?}.");
         self.clones[clone_id] = Some(current_state);
         poll_result
@@ -87,13 +87,11 @@ where
     pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
         let mut wakers = Vec::with_capacity(self.clones.len() + 1);
 
-        for state_opt in &self.clones {
-            if let Some(state) = state_opt {
-                if state.should_still_see_base_item()
-                    && let Some(waker) = state.waker()
-                {
-                    wakers.push(waker);
-                }
+        for state in self.clones.iter().flatten() {
+            if state.should_still_see_base_item()
+                && let Some(waker) = state.waker()
+            {
+                wakers.push(waker);
             }
         }
         wakers.push(extra_waker.clone());
@@ -107,7 +105,7 @@ where
     }
 
     /// Count the number of active clones
-    fn active_clone_count(&self) -> usize {
+    pub(crate) fn active_clone_count(&self) -> usize {
         self.clones.iter().filter(|s| s.is_some()).count()
     }
 
@@ -149,8 +147,10 @@ where
 
     pub(crate) fn has_other_clones_waiting(&self, exclude_clone_id: usize) -> bool {
         self.clones.iter().enumerate().any(|(clone_id, state_opt)| {
-            clone_id != exclude_clone_id && 
-            state_opt.as_ref().map_or(false, |state| state.should_still_see_base_item())
+            clone_id != exclude_clone_id
+                && state_opt
+                    .as_ref()
+                    .is_some_and(super::states::CloneState::should_still_see_base_item)
         })
     }
 
@@ -162,20 +162,13 @@ where
         if let Some(Some(state)) = self.clones.get(clone_id) {
             match state {
                 CloneState::QueueEmptyPending { .. } => true,
-                CloneState::AllSeenPending { last_seen_index, .. } => {
-                    self.queue.is_newer_than(
-                        queue_item_index,
-                        *last_seen_index,
-                    )
-                }
+                CloneState::AllSeenPending {
+                    last_seen_index, ..
+                } => self.queue.is_newer_than(queue_item_index, *last_seen_index),
                 CloneState::UnseenReady { unseen_index } => {
-                    !self.queue.is_newer_than(
-                        queue_item_index,
-                        *unseen_index,
-                    )
+                    !self.queue.is_newer_than(queue_item_index, *unseen_index)
                 }
-                CloneState::QueueEmpty
-                | CloneState::AllSeen => false,
+                CloneState::QueueEmpty | CloneState::AllSeen => false,
             }
         } else {
             false
@@ -184,7 +177,7 @@ where
 
     pub(crate) fn unregister(&mut self, clone_id: usize) {
         trace!("Unregistering clone {clone_id}.");
-        
+
         if !self.clone_exists(clone_id) {
             log::warn!("Attempted to unregister clone {clone_id} that was not registered");
             return;
@@ -212,7 +205,7 @@ where
             .filter_map(|(item_index, _)| {
                 let is_needed = (0..self.clones.len())
                     .any(|clone_id| self.clone_should_still_see_item(clone_id, item_index));
-                
+
                 if is_needed { None } else { Some(item_index) }
             })
             .collect();

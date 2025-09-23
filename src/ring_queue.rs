@@ -150,6 +150,42 @@ where
         self.ring_distance(current, maybe_newer)
             .is_some_and(|distance| distance > 0)
     }
+
+    /// Returns the first valid index newer than `current_index`, or None if no such index exists.
+    pub(crate) fn find_next_newer_index(&self, current_index: usize) -> Option<usize> {
+        let (oldest, newest) = (self.oldest?, self.newest?);
+
+        let next_consecutive = (current_index + 1) % self.capacity;
+        if self.items.contains_key(&next_consecutive)
+            && self.is_newer_than(next_consecutive, current_index)
+        {
+            return Some(next_consecutive);
+        }
+
+        let mut current = oldest;
+        while current != newest {
+            if self.is_newer_than(current, current_index) {
+                return Some(current);
+            }
+
+            current = (current + 1) % self.capacity;
+            if !self.items.contains_key(&current) {
+                if let Some(&next_key) = self.items.range((current + 1)..).next().map(|(k, _)| k)
+                    && self.is_valid_index(next_key)
+                {
+                    current = next_key;
+                    continue;
+                }
+                break;
+            }
+        }
+
+        if self.is_newer_than(newest, current_index) {
+            Some(newest)
+        } else {
+            None
+        }
+    }
 }
 
 pub struct RingQueueIter<'a, T>
