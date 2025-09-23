@@ -1,5 +1,6 @@
 use core::ops::Deref;
 use std::{
+    iter,
     pin::Pin,
     sync::Arc,
     task::{Poll, Wake, Waker},
@@ -85,23 +86,27 @@ where
     }
 
     pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
-        let mut wakers = Vec::with_capacity(self.clones.len() + 1);
+        // Optimized functional approach for hot path
+        let clone_wakers: Vec<Waker> = self
+            .clones
+            .iter()
+            .flatten()
+            .filter(|state| state.should_still_see_base_item())
+            .filter_map(super::states::CloneState::waker)
+            .collect();
 
-        for state in self.clones.iter().flatten() {
-            if state.should_still_see_base_item()
-                && let Some(waker) = state.waker()
-            {
-                wakers.push(waker);
-            }
-        }
-        wakers.push(extra_waker.clone());
+        let waker_count = clone_wakers.len() + 1;
 
         // Optimization: avoid Arc allocation for single waker
-        if wakers.len() == 1 {
-            return wakers.into_iter().next().unwrap();
+        if waker_count == 1 {
+            extra_waker.clone()
+        } else {
+            let all_wakers = clone_wakers
+                .into_iter()
+                .chain(iter::once(extra_waker.clone()))
+                .collect();
+            Waker::from(Arc::new(MultiWaker { wakers: all_wakers }))
         }
-
-        Waker::from(Arc::new(MultiWaker { wakers }))
     }
 
     /// Count the number of active clones
@@ -141,7 +146,8 @@ where
     pub(crate) fn remaining_queued_items(&self, clone_id: usize) -> usize {
         (&self.queue)
             .into_iter()
-            .filter(|(item_index, _)| self.clone_should_still_see_item(clone_id, *item_index))
+            .map(|(item_index, _)| item_index)
+            .filter(|&item_index| self.clone_should_still_see_item(clone_id, item_index))
             .count()
     }
 
@@ -151,6 +157,15 @@ where
                 && state_opt
                     .as_ref()
                     .is_some_and(super::states::CloneState::should_still_see_base_item)
+        })
+    }
+
+    /// Find queue items that no active clone needs anymore
+    fn find_unneeded_queue_items(&self) -> impl Iterator<Item = usize> + '_ {
+        (&self.queue).into_iter().filter_map(|(item_index, _)| {
+            let is_needed = (0..self.clones.len())
+                .any(|clone_id| self.clone_should_still_see_item(clone_id, item_index));
+            (!is_needed).then_some(item_index)
         })
     }
 
@@ -199,21 +214,13 @@ where
             return;
         }
 
-        // Find items that no clone needs anymore
-        let items_to_remove: Vec<usize> = (&self.queue)
+        // Remove items that no clone needs anymore using functional approach
+        self.find_unneeded_queue_items()
+            .collect::<Vec<_>>()
             .into_iter()
-            .filter_map(|(item_index, _)| {
-                let is_needed = (0..self.clones.len())
-                    .any(|clone_id| self.clone_should_still_see_item(clone_id, item_index));
-
-                if is_needed { None } else { Some(item_index) }
-            })
-            .collect();
-
-        // Remove unneeded items
-        for item_index in items_to_remove {
-            self.queue.remove(item_index);
-        }
+            .for_each(|item_index| {
+                self.queue.remove(item_index);
+            });
     }
 }
 

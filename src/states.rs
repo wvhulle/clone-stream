@@ -406,7 +406,8 @@ where
     fork.clones
         .iter()
         .enumerate()
-        .filter(|(_, state_opt)| state_opt.is_some())
-        .filter(|(clone_id, _)| fork.clone_should_still_see_item(*clone_id, index))
+        .filter(|(clone_id, state_opt)| {
+            state_opt.is_some() && fork.clone_should_still_see_item(*clone_id, index)
+        })
         .count()
 }

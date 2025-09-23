@@ -155,6 +155,7 @@ where
     pub(crate) fn find_next_newer_index(&self, current_index: usize) -> Option<usize> {
         let (oldest, newest) = (self.oldest?, self.newest?);
 
+        // Check consecutive index first
         let next_consecutive = (current_index + 1) % self.capacity;
         if self.items.contains_key(&next_consecutive)
             && self.is_newer_than(next_consecutive, current_index)
@@ -162,29 +163,21 @@ where
             return Some(next_consecutive);
         }
 
-        let mut current = oldest;
-        while current != newest {
-            if self.is_newer_than(current, current_index) {
-                return Some(current);
-            }
+        // Generate sequence of valid indices from oldest to newest
+        self.ring_indices_from(oldest)
+            .take_while(|&idx| idx != newest)
+            .find(|&idx| self.is_newer_than(idx, current_index))
+            .or_else(|| {
+                // Check newest index last
+                self.is_newer_than(newest, current_index).then_some(newest)
+            })
+    }
 
-            current = (current + 1) % self.capacity;
-            if !self.items.contains_key(&current) {
-                if let Some(&next_key) = self.items.range((current + 1)..).next().map(|(k, _)| k)
-                    && self.is_valid_index(next_key)
-                {
-                    current = next_key;
-                    continue;
-                }
-                break;
-            }
-        }
-
-        if self.is_newer_than(newest, current_index) {
-            Some(newest)
-        } else {
-            None
-        }
+    /// Generate an iterator of valid indices starting from a given index in ring order
+    fn ring_indices_from(&self, start: usize) -> impl Iterator<Item = usize> + '_ {
+        (0..self.capacity)
+            .map(move |offset| (start + offset) % self.capacity)
+            .filter(|&idx| self.items.contains_key(&idx))
     }
 }
 
