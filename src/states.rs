@@ -116,135 +116,70 @@ impl CloneState {
         BaseStream: Stream<Item: Clone>,
     {
         match self {
-            CloneState::QueueEmpty => self.handle_queue_empty(clone_id, waker, fork),
+            CloneState::QueueEmpty => self.transition_on_poll(
+                poll_base_with_queue_check(clone_id, waker, fork),
+                CloneState::queue_empty(),
+                next_pending_state(waker, fork),
+            ),
             CloneState::QueueEmptyPending { .. } => {
-                self.handle_queue_empty_pending(clone_id, waker, fork)
+                if fork.queue.is_empty() {
+                    self.transition_on_poll(
+                        poll_base_with_queue_check(clone_id, waker, fork),
+                        CloneState::queue_empty(),
+                        CloneState::queue_empty_pending(waker),
+                    )
+                } else {
+                    let Some(queue_index) = fork.queue.oldest else {
+                        *self = CloneState::queue_empty_pending(waker);
+                        return Poll::Pending;
+                    };
+
+                    let item = process_oldest_queue_item(fork, clone_id, queue_index);
+                    *self = CloneState::unseen_ready(queue_index);
+                    Poll::Ready(item)
+                }
             }
             CloneState::AllSeenPending {
                 last_seen_index, ..
             } => {
                 let index = *last_seen_index;
-                self.handle_all_seen_pending(clone_id, waker, fork, index)
+                if let Some((newer_index, item)) = process_newer_queue_item(fork, index) {
+                    *self = CloneState::unseen_ready(newer_index);
+                    Poll::Ready(item)
+                } else {
+                    self.transition_on_poll(
+                        poll_base_stream(clone_id, waker, fork),
+                        CloneState::all_seen(),
+                        CloneState::all_seen_pending(waker, index),
+                    )
+                }
             }
-            CloneState::AllSeen => self.handle_all_seen(clone_id, waker, fork),
+            CloneState::AllSeen => {
+                let pending_state = if let Some(oldest_index) = fork.queue.oldest {
+                    CloneState::all_seen_pending(waker, oldest_index)
+                } else {
+                    CloneState::queue_empty_pending(waker)
+                };
+
+                self.transition_on_poll(
+                    poll_base_stream(clone_id, waker, fork),
+                    CloneState::all_seen(),
+                    pending_state,
+                )
+            }
             CloneState::UnseenReady { unseen_index } => {
                 let index = *unseen_index;
-                self.handle_unseen_ready(clone_id, waker, fork, index)
+                if let Some((newer_index, item)) = process_newer_queue_item(fork, index) {
+                    *self = CloneState::unseen_ready(newer_index);
+                    Poll::Ready(item)
+                } else {
+                    self.transition_on_poll(
+                        poll_base_stream(clone_id, waker, fork),
+                        CloneState::all_seen(),
+                        CloneState::all_seen_pending(waker, index),
+                    )
+                }
             }
-        }
-    }
-
-    #[inline]
-    fn handle_queue_empty<BaseStream>(
-        &mut self,
-        clone_id: usize,
-        waker: &Waker,
-        fork: &mut Fork<BaseStream>,
-    ) -> Poll<Option<BaseStream::Item>>
-    where
-        BaseStream: Stream<Item: Clone>,
-    {
-        self.transition_on_poll(
-            poll_base_with_queue_check(clone_id, waker, fork),
-            CloneState::queue_empty(),
-            next_pending_state(waker, fork),
-        )
-    }
-
-    #[inline]
-    fn handle_queue_empty_pending<BaseStream>(
-        &mut self,
-        clone_id: usize,
-        waker: &Waker,
-        fork: &mut Fork<BaseStream>,
-    ) -> Poll<Option<BaseStream::Item>>
-    where
-        BaseStream: Stream<Item: Clone>,
-    {
-        if fork.queue.is_empty() {
-            self.transition_on_poll(
-                poll_base_with_queue_check(clone_id, waker, fork),
-                CloneState::queue_empty(),
-                CloneState::queue_empty_pending(waker),
-            )
-        } else {
-            let Some(queue_index) = fork.queue.oldest else {
-                *self = CloneState::queue_empty_pending(waker);
-                return Poll::Pending;
-            };
-
-            let item = process_oldest_queue_item(fork, clone_id, queue_index);
-            *self = CloneState::unseen_ready(queue_index);
-            Poll::Ready(item)
-        }
-    }
-
-    #[inline]
-    fn handle_all_seen_pending<BaseStream>(
-        &mut self,
-        clone_id: usize,
-        waker: &Waker,
-        fork: &mut Fork<BaseStream>,
-        last_seen_index: usize,
-    ) -> Poll<Option<BaseStream::Item>>
-    where
-        BaseStream: Stream<Item: Clone>,
-    {
-        if let Some((newer_index, item)) = process_newer_queue_item(fork, last_seen_index) {
-            *self = CloneState::unseen_ready(newer_index);
-            Poll::Ready(item)
-        } else {
-            self.transition_on_poll(
-                poll_base_stream(clone_id, waker, fork),
-                CloneState::all_seen(),
-                CloneState::all_seen_pending(waker, last_seen_index),
-            )
-        }
-    }
-
-    #[inline]
-    fn handle_all_seen<BaseStream>(
-        &mut self,
-        clone_id: usize,
-        waker: &Waker,
-        fork: &mut Fork<BaseStream>,
-    ) -> Poll<Option<BaseStream::Item>>
-    where
-        BaseStream: Stream<Item: Clone>,
-    {
-        let pending_state = if let Some(oldest_index) = fork.queue.oldest {
-            CloneState::all_seen_pending(waker, oldest_index)
-        } else {
-            CloneState::queue_empty_pending(waker)
-        };
-
-        self.transition_on_poll(
-            poll_base_stream(clone_id, waker, fork),
-            CloneState::all_seen(),
-            pending_state,
-        )
-    }
-
-    #[inline]
-    fn handle_unseen_ready<BaseStream>(
-        &mut self,
-        clone_id: usize,
-        waker: &Waker,
-        fork: &mut Fork<BaseStream>,
-        current_index: usize,
-    ) -> Poll<Option<BaseStream::Item>>
-    where
-        BaseStream: Stream<Item: Clone>,
-    {
-        if let Some((newer_index, item)) = process_newer_queue_item(fork, current_index) {
-            *self = CloneState::unseen_ready(newer_index);
-            Poll::Ready(item)
-        } else {
-            self.transition_on_poll(
-                poll_base_stream(clone_id, waker, fork),
-                CloneState::all_seen(),
-                CloneState::all_seen_pending(waker, current_index),
-            )
         }
     }
 }
