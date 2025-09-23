@@ -31,7 +31,3 @@ tokio-stream = "0.1.17"
 [[bench]]
 harness = false
 name = "fork_clone"
-
-[[bench]]
-harness = false
-name = "comparative"

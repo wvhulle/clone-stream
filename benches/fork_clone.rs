@@ -16,17 +16,15 @@ struct PerformanceStats {
 }
 
 impl PerformanceStats {
-    /// Pure function to create new stats with added result
+    /// Create new stats with added result
     fn with_result(mut self, clones: usize, items: usize, time_ns: f64) -> Self {
         self.results.insert((clones, items), time_ns);
         self
     }
-
-    /// Functional-style summary generation
     fn generate_summary(&self) -> Vec<String> {
         let header = vec![
             "\n=== Performance Summary (clones x items) ===".to_string(),
-            "Format: clonesxitems: avg_time | throughput".to_string(),
+            "Format: clones x items: avg_time | throughput".to_string(),
         ];
 
         let item_sections = ITEM_COUNTS
@@ -84,10 +82,6 @@ impl PerformanceStats {
     }
 }
 
-thread_local! {
-    static STATS: std::cell::RefCell<PerformanceStats> = std::cell::RefCell::new(PerformanceStats::default());
-}
-
 const fn create_test_data(size: usize) -> std::ops::Range<usize> {
     0..size
 }
@@ -114,17 +108,10 @@ trait Pipe: Sized {
 
 impl<T> Pipe for T {}
 
-/// Store benchmark result
-fn store_result(clones: usize, items: usize, avg_time_ns: f64) {
-    STATS.with(|stats| {
-        let current_stats = stats.borrow().clone();
-        let updated_stats = current_stats.with_result(clones, items, avg_time_ns);
-        *stats.borrow_mut() = updated_stats;
-    });
-}
-
 /// Combined benchmark testing clone count x item count combinations
 fn benchmark_clone_scaling(c: &mut Criterion) {
+    use std::cell::RefCell;
+
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("Clone Scaling");
 
@@ -134,6 +121,9 @@ fn benchmark_clone_scaling(c: &mut Criterion) {
     group.warm_up_time(Duration::from_secs(1));
 
     println!("Testing clone scaling across different combinations...");
+
+    // Local stats collection
+    let stats = RefCell::new(PerformanceStats::default());
 
     benchmark_configurations().for_each(|(clones, items)| {
         let test_id = format!("{clones}clones_{items}items");
@@ -178,7 +168,9 @@ fn benchmark_clone_scaling(c: &mut Criterion) {
                 // Store results for summary
                 if iterations > 0 {
                     let avg_time_ns = total_time.as_nanos() as f64 / f64::from(iterations);
-                    store_result(clones, items, avg_time_ns);
+                    let current_stats = stats.borrow().clone();
+                    let updated_stats = current_stats.with_result(clones, items, avg_time_ns);
+                    *stats.borrow_mut() = updated_stats;
                 }
             },
         );
@@ -188,7 +180,7 @@ fn benchmark_clone_scaling(c: &mut Criterion) {
     println!();
 
     // Print statistics summary
-    STATS.with(|stats| stats.borrow().print_summary());
+    stats.borrow().print_summary();
 }
 
 /// Quick fanout test for clone creation performance
@@ -198,7 +190,7 @@ fn benchmark_fanout_quick(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(3));
     group.warm_up_time(Duration::from_secs(1));
 
-    println!("⚡ Quick fanout test:");
+    println!("Quick fanout test:");
 
     CLONE_COUNTS.iter().for_each(|&clone_count| {
         group.bench_with_input(
