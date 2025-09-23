@@ -34,13 +34,13 @@ Test run a single benchmark pass:
 cargo bench --bench fork_clone -- --test
 ```
 
-Run standard statistical benchmarks:
+Run standard statistical benchmarks (with detailed output):
 
 ```bash
 cargo bench --bench fork_clone
 ```
 
-Run all (including comparative) benchmarks:
+Run all benchmarks (without performance change output):
 
 ```bash
 cargo bench
