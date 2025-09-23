@@ -21,7 +21,6 @@ const MAX_CLONE_COUNT: usize = 65536;
 /// Maximum number of items that can be queued simultaneously.
 const MAX_QUEUE_SIZE: usize = 1024 * 1024;
 
-/// Configuration for Fork behavior.
 #[derive(Debug, Clone, Copy)]
 pub struct ForkConfig {
     /// Maximum number of clones allowed.
@@ -45,9 +44,7 @@ where
 {
     pub(crate) base_stream: Pin<Box<BaseStream>>,
     pub(crate) queue: RingQueue<Option<BaseStream::Item>>,
-    /// Clone states stored in a Vec for O(1) access by clone ID
     pub(crate) clones: Vec<Option<CloneState>>,
-    /// Stack of reusable clone IDs for efficient memory usage
     available_clone_indices: Vec<usize>,
     config: ForkConfig,
 }
@@ -63,7 +60,7 @@ where
     pub(crate) fn with_config(base_stream: BaseStream, config: ForkConfig) -> Self {
         Self {
             base_stream: Box::pin(base_stream),
-            clones: Vec::with_capacity(16), // Pre-allocate for common case
+            clones: Vec::new(),
             queue: RingQueue::new(config.max_queue_size),
             available_clone_indices: Vec::new(),
             config,
@@ -86,7 +83,6 @@ where
     }
 
     pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
-        // Optimized functional approach for hot path
         let clone_wakers: Vec<Waker> = self
             .clones
             .iter()
@@ -97,7 +93,7 @@ where
 
         let waker_count = clone_wakers.len() + 1;
 
-        // Optimization: avoid Arc allocation for single waker
+        // Avoid Arc allocation for single waker
         if waker_count == 1 {
             extra_waker.clone()
         } else {
@@ -128,7 +124,6 @@ where
             return Ok(reused_id);
         }
 
-        // Check clone limit
         if self.active_clone_count() >= self.config.max_clone_count {
             return Err(CloneStreamError::MaxClonesExceeded {
                 current_count: self.active_clone_count(),
@@ -136,7 +131,6 @@ where
             });
         }
 
-        // Create new clone at end of Vec
         let clone_id = self.clones.len();
         trace!("Registering clone {clone_id} (new index).");
         self.clones.push(Some(CloneState::default()));
@@ -198,23 +192,20 @@ where
             return;
         }
 
-        // Mark clone as inactive and make ID available for reuse
         self.clones[clone_id] = None;
         self.available_clone_indices.push(clone_id);
 
-        // Clean up any queue items that are no longer needed
         self.cleanup_unneeded_queue_items();
         trace!("Unregister of clone {clone_id} complete.");
     }
 
     fn cleanup_unneeded_queue_items(&mut self) {
-        // If no active clones, clear everything
         if self.active_clone_count() == 0 {
             self.queue.clear();
             return;
         }
 
-        // Remove items that no clone needs anymore using functional approach
+        // Remove items that no clone needs anymore
         self.find_unneeded_queue_items()
             .collect::<Vec<_>>()
             .into_iter()

@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 /// A ring buffer queue that wraps around at a maximum capacity.
-/// Provides proper ordering semantics for ring buffer indices.
 #[derive(Debug)]
 pub(crate) struct RingQueue<T>
 where
@@ -97,9 +96,7 @@ where
         self.items.get(&index)
     }
 
-    /// Checks if an index is within the valid range of the ring buffer.
-    /// Returns true if the index falls within the range from oldest to newest,
-    /// accounting for wraparound when the buffer spans across the capacity boundary.
+    /// Checks if an index is within the valid range of the ring buffer.boundary.
     fn is_valid_index(&self, index: usize) -> bool {
         if let (Some(oldest), Some(newest)) = (self.oldest, self.newest) {
             (oldest <= newest && index >= oldest && index <= newest)
@@ -110,18 +107,14 @@ where
     }
 
     /// Calculates the logical distance from one index to another in ring buffer order.
-    /// Returns Some(distance) if both indices are valid and `to` comes after `from`,
-    /// or None if the indices are invalid or `to` comes before `from` in the ordering.
-    /// Handles wraparound correctly when the buffer spans across the capacity boundary.
     fn ring_distance(&self, from: usize, to: usize) -> Option<usize> {
         if self.is_valid_index(from) && self.is_valid_index(to) {
             let (oldest, newest) = (self.oldest?, self.newest?);
 
             if oldest <= newest {
-                // No wraparound case
                 if to >= from { Some(to - from) } else { None }
             } else {
-                // Wraparound case - use modular arithmetic
+                // Wraparound case
                 let distance = (to + self.capacity - from) % self.capacity;
                 Some(distance)
             }
@@ -163,7 +156,6 @@ where
             return Some(next_consecutive);
         }
 
-        // Generate sequence of valid indices from oldest to newest
         self.ring_indices_from(oldest)
             .take_while(|&idx| idx != newest)
             .find(|&idx| self.is_newer_than(idx, current_index))
