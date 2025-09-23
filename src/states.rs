@@ -307,6 +307,8 @@ where
     }
 }
 
+/// Process the oldest item in the queue for a specific clone
+/// Uses move semantics when this is the last clone that needs the item
 fn process_oldest_queue_item<BaseStream>(
     fork: &mut Fork<BaseStream>,
     clone_id: usize,
@@ -315,47 +317,54 @@ fn process_oldest_queue_item<BaseStream>(
 where
     BaseStream: Stream<Item: Clone>,
 {
-    let clones_waiting: Vec<_> = fork
-        .clones
-        .iter()
-        .filter(|(other_clone_id, _state)| {
-            fork.clone_should_still_see_item(**other_clone_id, first_queue_index)
-        })
-        .map(|(clone_id, _state)| clone_id)
-        .collect();
+    // Check if any other clones still need this item
+    let other_clones_need_item = (0..fork.clones.len())
+        .any(|other_clone_id| {
+            other_clone_id != clone_id && 
+            fork.clone_should_still_see_item(other_clone_id, first_queue_index)
+        });
 
-    if clones_waiting.is_empty() {
-        trace!(
-            "Clone {clone_id}: Popping queue item at index {first_queue_index} (no other clones waiting)"
-        );
-        fork.queue.pop_oldest().unwrap()
-    } else {
-        trace!(
-            "Clone {clone_id}: Cloning queue item at index {first_queue_index} (clones {clones_waiting:?} also waiting)"
-        );
+    if other_clones_need_item {
+        // Other clones need it - clone the item
+        trace!("Clone {clone_id}: Cloning queue item at index {first_queue_index}");
         fork.queue.get(first_queue_index).unwrap().clone()
+    } else {
+        // Last clone to need it - move the item (avoid clone)
+        trace!("Clone {clone_id}: Moving queue item at index {first_queue_index}");
+        fork.queue.pop_oldest().unwrap()
     }
 }
 
+/// Process a newer queue item for a specific clone
+/// Optimizes by moving items when possible instead of cloning
 fn process_newer_queue_item<BaseStream>(
     fork: &mut Fork<BaseStream>,
     current_index: usize,
-    should_cleanup: bool,
+    _should_cleanup: bool,
 ) -> Option<(usize, Option<BaseStream::Item>)>
 where
     BaseStream: Stream<Item: Clone>,
 {
     find_newer_queue_item(fork, current_index).map(|newer_index| {
-        let item = fork.queue.get(newer_index).unwrap().clone();
+        // Count how many clones still need this item
+        let clones_still_need_item = (0..fork.clones.len())
+            .filter(|&clone_id| fork.clone_should_still_see_item(clone_id, newer_index))
+            .count();
 
-        if should_cleanup
-            && !fork
-                .clones
-                .iter()
-                .any(|(clone_id, _state)| fork.clone_should_still_see_item(*clone_id, newer_index))
-        {
-            fork.queue.remove(newer_index);
-        }
+        let item = match clones_still_need_item {
+            0 => {
+                // No clones need it anymore - remove it
+                fork.queue.remove(newer_index).unwrap()
+            }
+            1 => {
+                // Only one clone needs it - move instead of clone
+                fork.queue.remove(newer_index).unwrap()
+            }
+            _ => {
+                // Multiple clones need it - must clone
+                fork.queue.get(newer_index).unwrap().clone()
+            }
+        };
 
         (newer_index, item)
     })
