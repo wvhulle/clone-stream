@@ -10,8 +10,9 @@ use crate::Fork;
 
 /// Represents the state of a clone in the stream cloning state machine.
 ///
-/// Each clone maintains its own state to track its position relative to the base stream
-/// and the shared queue. The state determines how the clone should behave when polled.
+/// Each clone maintains its own state to track its position relative to the
+/// base stream and the shared queue. The state determines how the clone should
+/// behave when polled.
 #[derive(Clone, Debug)]
 pub(crate) enum CloneState {
     /// Queue is empty, can poll base stream directly
@@ -293,11 +294,11 @@ fn other_clones_need_item<BaseStream>(
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fork.clones.iter().enumerate().any(|(clone_id, state_opt)| {
-        clone_id != exclude_clone_id
-            && state_opt.is_some()
-            && fork.clone_should_still_see_item(clone_id, queue_index)
-    })
+    fork.clone_registry
+        .iter_active_with_ids()
+        .any(|(clone_id, _)| {
+            clone_id != exclude_clone_id && fork.clone_should_still_see_item(clone_id, queue_index)
+        })
 }
 
 #[inline]
@@ -338,11 +339,8 @@ fn count_clones_needing_item<BaseStream>(fork: &Fork<BaseStream>, index: usize) 
 where
     BaseStream: Stream<Item: Clone>,
 {
-    fork.clones
-        .iter()
-        .enumerate()
-        .filter(|(clone_id, state_opt)| {
-            state_opt.is_some() && fork.clone_should_still_see_item(*clone_id, index)
-        })
+    fork.clone_registry
+        .iter_active_with_ids()
+        .filter(|(clone_id, _)| fork.clone_should_still_see_item(*clone_id, index))
         .count()
 }

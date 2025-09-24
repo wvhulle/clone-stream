@@ -26,6 +26,7 @@ pub mod clean_log;
 mod clone;
 mod error;
 mod fork;
+mod registry;
 pub mod ring_queue;
 mod states;
 

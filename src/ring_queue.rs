@@ -96,7 +96,8 @@ where
         self.items.get(&index)
     }
 
-    /// Checks if an index is within the valid range of the ring buffer.boundary.
+    /// Checks if an index is within the valid range of the ring
+    /// buffer.boundary.
     fn is_valid_index(&self, index: usize) -> bool {
         if let (Some(oldest), Some(newest)) = (self.oldest, self.newest) {
             (oldest <= newest && index >= oldest && index <= newest)
@@ -106,7 +107,8 @@ where
         }
     }
 
-    /// Calculates the logical distance from one index to another in ring buffer order.
+    /// Calculates the logical distance from one index to another in ring buffer
+    /// order.
     fn ring_distance(&self, from: usize, to: usize) -> Option<usize> {
         if self.is_valid_index(from) && self.is_valid_index(to) {
             let (oldest, newest) = (self.oldest?, self.newest?);
@@ -144,7 +146,8 @@ where
             .is_some_and(|distance| distance > 0)
     }
 
-    /// Returns the first valid index newer than `current_index`, or None if no such index exists.
+    /// Returns the first valid index newer than `current_index`, or None if no
+    /// such index exists.
     pub(crate) fn find_next_newer_index(&self, current_index: usize) -> Option<usize> {
         let (oldest, newest) = (self.oldest?, self.newest?);
 
@@ -165,7 +168,8 @@ where
             })
     }
 
-    /// Generate an iterator of valid indices starting from a given index in ring order
+    /// Generate an iterator of valid indices starting from a given index in
+    /// ring order
     fn ring_indices_from(&self, start: usize) -> impl Iterator<Item = usize> + '_ {
         (0..self.capacity)
             .map(move |offset| (start + offset) % self.capacity)

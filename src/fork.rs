@@ -7,13 +7,9 @@ use std::{
 };
 
 use futures::Stream;
-use log::{debug, trace, warn};
+use log::{debug, warn};
 
-use crate::{
-    error::{CloneStreamError, Result},
-    ring_queue::RingQueue,
-    states::CloneState,
-};
+use crate::{error::Result, registry::CloneRegistry, ring_queue::RingQueue};
 
 /// Maximum number of clones that can be registered simultaneously.
 const MAX_CLONE_COUNT: usize = 65536;
@@ -44,9 +40,7 @@ where
 {
     pub(crate) base_stream: Pin<Box<BaseStream>>,
     pub(crate) queue: RingQueue<Option<BaseStream::Item>>,
-    pub(crate) clones: Vec<Option<CloneState>>,
-    available_clone_indices: Vec<usize>,
-    config: ForkConfig,
+    pub(crate) clone_registry: CloneRegistry,
 }
 
 impl<BaseStream> Fork<BaseStream>
@@ -60,10 +54,8 @@ where
     pub(crate) fn with_config(base_stream: BaseStream, config: ForkConfig) -> Self {
         Self {
             base_stream: Box::pin(base_stream),
-            clones: Vec::new(),
+            clone_registry: CloneRegistry::new(config.max_clone_count),
             queue: RingQueue::new(config.max_queue_size),
-            available_clone_indices: Vec::new(),
-            config,
         }
     }
 
@@ -72,25 +64,18 @@ where
         clone_id: usize,
         clone_waker: &Waker,
     ) -> Poll<Option<BaseStream::Item>> {
-        let mut current_state = self.clones[clone_id].take().unwrap();
+        let mut current_state = self.clone_registry.take(clone_id).unwrap();
         debug!("State of clone {clone_id} is {current_state:?}.");
 
         let poll_result = current_state.step(clone_id, clone_waker, self);
 
         debug!("Clone {clone_id} transitioned to {current_state:?}.");
-        self.clones[clone_id] = Some(current_state);
+        self.clone_registry.restore(clone_id, current_state);
         poll_result
     }
 
     pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
-        let clone_wakers: Vec<Waker> = self
-            .clones
-            .iter()
-            .flatten()
-            .filter(|state| state.should_still_see_base_item())
-            .filter_map(super::states::CloneState::waker)
-            .collect();
-
+        let clone_wakers = self.clone_registry.collect_wakers_needing_base_item();
         let waker_count = clone_wakers.len() + 1;
 
         // Avoid Arc allocation for single waker
@@ -107,34 +92,12 @@ where
 
     /// Count the number of active clones
     pub(crate) fn active_clone_count(&self) -> usize {
-        self.clones.iter().filter(|s| s.is_some()).count()
-    }
-
-    /// Check if a clone exists and is active
-    fn clone_exists(&self, clone_id: usize) -> bool {
-        clone_id < self.clones.len() && self.clones[clone_id].is_some()
+        self.clone_registry.active_count()
     }
 
     /// Register a new clone and return its ID
     pub(crate) fn register(&mut self) -> Result<usize> {
-        // Try to reuse an available index first
-        if let Some(reused_id) = self.available_clone_indices.pop() {
-            trace!("Registering clone {reused_id} (reused index).");
-            self.clones[reused_id] = Some(CloneState::default());
-            return Ok(reused_id);
-        }
-
-        if self.active_clone_count() >= self.config.max_clone_count {
-            return Err(CloneStreamError::MaxClonesExceeded {
-                current_count: self.active_clone_count(),
-                max_allowed: self.config.max_clone_count,
-            });
-        }
-
-        let clone_id = self.clones.len();
-        trace!("Registering clone {clone_id} (new index).");
-        self.clones.push(Some(CloneState::default()));
-        Ok(clone_id)
+        self.clone_registry.register()
     }
 
     pub(crate) fn remaining_queued_items(&self, clone_id: usize) -> usize {
@@ -146,18 +109,14 @@ where
     }
 
     pub(crate) fn has_other_clones_waiting(&self, exclude_clone_id: usize) -> bool {
-        self.clones.iter().enumerate().any(|(clone_id, state_opt)| {
-            clone_id != exclude_clone_id
-                && state_opt
-                    .as_ref()
-                    .is_some_and(super::states::CloneState::should_still_see_base_item)
-        })
+        self.clone_registry
+            .has_other_clones_waiting(exclude_clone_id)
     }
 
     /// Find queue items that no active clone needs anymore
     fn find_unneeded_queue_items(&self) -> impl Iterator<Item = usize> {
         (&self.queue).into_iter().filter_map(|(item_index, _)| {
-            let is_needed = (0..self.clones.len())
+            let is_needed = (0..self.clone_registry.len())
                 .any(|clone_id| self.clone_should_still_see_item(clone_id, item_index));
             (!is_needed).then_some(item_index)
         })
@@ -168,35 +127,16 @@ where
         clone_id: usize,
         queue_item_index: usize,
     ) -> bool {
-        if let Some(Some(state)) = self.clones.get(clone_id) {
-            match state {
-                CloneState::QueueEmptyPending { .. } => true,
-                CloneState::AllSeenPending {
-                    last_seen_index, ..
-                } => self.queue.is_newer_than(queue_item_index, *last_seen_index),
-                CloneState::UnseenReady { unseen_index } => {
-                    !self.queue.is_newer_than(queue_item_index, *unseen_index)
-                }
-                CloneState::QueueEmpty | CloneState::AllSeen => false,
-            }
-        } else {
-            false
-        }
+        self.clone_registry.should_clone_see_item(
+            clone_id,
+            queue_item_index,
+            |item_index, last_seen| self.queue.is_newer_than(item_index, last_seen),
+        )
     }
 
     pub(crate) fn unregister(&mut self, clone_id: usize) {
-        trace!("Unregistering clone {clone_id}.");
-
-        if !self.clone_exists(clone_id) {
-            log::warn!("Attempted to unregister clone {clone_id} that was not registered");
-            return;
-        }
-
-        self.clones[clone_id] = None;
-        self.available_clone_indices.push(clone_id);
-
+        self.clone_registry.unregister(clone_id);
         self.cleanup_unneeded_queue_items();
-        trace!("Unregister of clone {clone_id} complete.");
     }
 
     fn cleanup_unneeded_queue_items(&mut self) {
