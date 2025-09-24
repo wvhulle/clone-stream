@@ -113,7 +113,7 @@ impl CloneRegistry {
         queue_item_index: usize,
         is_newer_than: impl Fn(usize, usize) -> bool,
     ) -> bool {
-        if let Some(Some(state)) = self.clones.get(clone_id) {
+        if let Some(state) = self.clones.get(clone_id).and_then(|opt| opt.as_ref()) {
             match state {
                 CloneState::QueueEmptyPending { .. } => true,
                 CloneState::AllSeenPending {
