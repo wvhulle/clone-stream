@@ -92,6 +92,7 @@ impl CloneRegistry {
     }
 
     pub(crate) fn collect_wakers_needing_base_item(&self) -> Vec<Waker> {
+        trace!("Collecting wakers for clones needing base item.");
         self.iter_active()
             .filter(|state| state.should_still_see_base_item())
             .filter_map(CloneState::waker)
@@ -107,25 +108,8 @@ impl CloneRegistry {
         })
     }
 
-    pub(crate) fn should_clone_see_item(
-        &self,
-        clone_id: usize,
-        queue_item_index: usize,
-        is_newer_than: impl Fn(usize, usize) -> bool,
-    ) -> bool {
-        if let Some(state) = self.clones.get(clone_id).and_then(|opt| opt.as_ref()) {
-            match state {
-                CloneState::QueueEmptyPending { .. } => true,
-                CloneState::AllSeenPending {
-                    last_seen_index, ..
-                } => is_newer_than(queue_item_index, *last_seen_index),
-                CloneState::UnseenReady { unseen_index } => {
-                    !is_newer_than(queue_item_index, *unseen_index)
-                }
-                CloneState::QueueEmpty | CloneState::AllSeen => false,
-            }
-        } else {
-            false
-        }
+    pub(crate) fn get_clone_state(&self, clone_id: usize) -> Option<&CloneState> {
+        self.clones.get(clone_id).and_then(|opt| opt.as_ref())
     }
+
 }

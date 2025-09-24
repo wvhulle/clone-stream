@@ -7,7 +7,7 @@ use std::{
 };
 
 use futures::Stream;
-use log::{debug, warn};
+use log::{debug, trace, warn};
 
 use crate::{error::Result, registry::CloneRegistry, ring_queue::RingQueue};
 
@@ -76,6 +76,10 @@ where
 
     pub(crate) fn waker(&self, extra_waker: &Waker) -> Waker {
         let clone_wakers = self.clone_registry.collect_wakers_needing_base_item();
+        trace!(
+            "There are {} clone wakers needing base item. Adding one more",
+            clone_wakers.len()
+        );
         let waker_count = clone_wakers.len() + 1;
 
         // Avoid Arc allocation for single waker
@@ -104,7 +108,7 @@ where
         (&self.queue)
             .into_iter()
             .map(|(item_index, _)| item_index)
-            .filter(|&item_index| self.clone_should_still_see_item(clone_id, item_index))
+            .filter(|&item_index| self.should_clone_see_item(clone_id, item_index))
             .count()
     }
 
@@ -113,25 +117,31 @@ where
             .has_other_clones_waiting(exclude_clone_id)
     }
 
+    pub(crate) fn should_clone_see_item(&self, clone_id: usize, queue_item_index: usize) -> bool {
+        if let Some(state) = self.clone_registry.get_clone_state(clone_id) {
+            match state {
+                crate::states::CloneState::Initial
+                | crate::states::CloneState::QueueEmptyPending { .. } => true,
+                crate::states::CloneState::AllSeenPending {
+                    last_seen_index, ..
+                } => self.queue.is_newer_than(queue_item_index, *last_seen_index),
+                crate::states::CloneState::PreviouslySawOnQueue {
+                    last_seen_queue_index: unseen_index,
+                } => !self.queue.is_newer_than(queue_item_index, *unseen_index),
+                crate::states::CloneState::QueueEmpty | crate::states::CloneState::AllSeen => false,
+            }
+        } else {
+            false
+        }
+    }
+
     /// Find queue items that no active clone needs anymore
     fn find_unneeded_queue_items(&self) -> impl Iterator<Item = usize> {
         (&self.queue).into_iter().filter_map(|(item_index, _)| {
             let is_needed = (0..self.clone_registry.len())
-                .any(|clone_id| self.clone_should_still_see_item(clone_id, item_index));
+                .any(|clone_id| self.should_clone_see_item(clone_id, item_index));
             (!is_needed).then_some(item_index)
         })
-    }
-
-    pub(crate) fn clone_should_still_see_item(
-        &self,
-        clone_id: usize,
-        queue_item_index: usize,
-    ) -> bool {
-        self.clone_registry.should_clone_see_item(
-            clone_id,
-            queue_item_index,
-            |item_index, last_seen| self.queue.is_newer_than(item_index, last_seen),
-        )
     }
 
     pub(crate) fn unregister(&mut self, clone_id: usize) {

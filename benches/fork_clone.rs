@@ -51,11 +51,9 @@ fn benchmark_item_throughput(c: &mut Criterion) {
                                     })
                                     .collect::<Vec<_>>()
                             })
-                            .pipe(future::join_all)
+                            .pipe(future::try_join_all)
                             .await
-                            .into_iter()
-                            .map(Result::unwrap)
-                            .sum::<usize>()
+                            .pipe(Result::unwrap)
                             .pipe(black_box)
                     });
 

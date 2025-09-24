@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use log::trace;
+
 /// A ring buffer queue that wraps around at a maximum capacity.
 #[derive(Debug)]
 pub(crate) struct RingQueue<T>
@@ -86,6 +88,14 @@ where
         self.items.is_empty()
     }
 
+    pub fn oldest_index(&self) -> Option<usize> {
+        if self.is_empty() {
+            None
+        } else {
+            self.oldest
+        }
+    }
+
     pub(crate) fn clear(&mut self) {
         self.items.clear();
         self.oldest = None;
@@ -150,9 +160,12 @@ where
     /// such index exists.
     pub(crate) fn find_next_newer_index(&self, current_index: usize) -> Option<usize> {
         let (oldest, newest) = (self.oldest?, self.newest?);
-
+        trace!("Finding next newer index after {current_index}, oldest={oldest}, newest={newest}");
+        trace!("Current queue has length {:?}", self.items.len());
         // Check consecutive index first
-        let next_consecutive = (current_index + 1) % self.capacity;
+        let next_consecutive = (current_index) % self.capacity;
+
+        trace!("Next consecutive index is {next_consecutive}");
         if self.items.contains_key(&next_consecutive)
             && self.is_newer_than(next_consecutive, current_index)
         {
