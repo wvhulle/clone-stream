@@ -31,17 +31,26 @@ where
         if self.capacity == 0 {
             return;
         }
+        
+        // If queue is at capacity, remove oldest item first
+        if self.items.len() >= self.capacity {
+            if let Some(oldest) = self.oldest {
+                self.items.remove(&oldest);
+                self.oldest = self.next_ring_index(oldest);
+            }
+        }
+        
         if let Some(newest) = self.newest {
             let next_index = (newest + 1) % self.capacity;
-            if self.items.contains_key(&next_index) {
-                self.items.remove(&next_index);
-                if self.oldest == Some(next_index) {
-                    self.oldest = self.next_ring_index(next_index);
-                }
-            }
             self.items.insert(next_index, item);
             self.newest = Some(next_index);
+            
+            // Update oldest if this is the first item after being empty
+            if self.oldest.is_none() {
+                self.oldest = Some(next_index);
+            }
         } else {
+            // First item
             self.newest = Some(0);
             self.oldest = Some(0);
             self.items.insert(0, item);
@@ -163,7 +172,7 @@ where
         trace!("Finding next newer index after {current_index}, oldest={oldest}, newest={newest}");
         trace!("Current queue has length {:?}", self.items.len());
         // Check consecutive index first
-        let next_consecutive = (current_index) % self.capacity;
+        let next_consecutive = (current_index + 1) % self.capacity;
 
         trace!("Next consecutive index is {next_consecutive}");
         if self.items.contains_key(&next_consecutive)

@@ -12,7 +12,6 @@ const N_ITEMS_SENT: usize = 2;
 
 #[tokio::test]
 async fn mass_send() {
-    log();
     let (sender, receiver) = futures::channel::mpsc::unbounded::<usize>();
 
     let template_clone: CloneStream<_> = receiver.into();
