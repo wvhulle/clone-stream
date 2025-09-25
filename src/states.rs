@@ -211,7 +211,7 @@ where
     {
         Poll::Ready(item) => {
             trace!("Base stream ready with item");
-            if fork.has_other_clones_waiting(clone_id) {
+            if fork.clone_registry.has_other_clones_waiting(clone_id) {
                 trace!("Queuing item for other waiting clones");
                 fork.item_buffer.push(item.clone());
             } else {
@@ -242,7 +242,7 @@ where
         Poll::Ready(item) => {
             trace!("Base stream ready with item");
 
-            if fork.has_other_clones_waiting(clone_id) {
+            if fork.clone_registry.has_other_clones_waiting(clone_id) {
                 trace!("Queuing item for other interested clones");
                 fork.item_buffer.push(item.clone());
             } else {
@@ -325,7 +325,7 @@ where
         .item_buffer
         .find_next_newer_index(last_seen_queue_index)?;
 
-    let item = if fork.active_clone_count() <= 1 {
+    let item = if fork.clone_registry.count() <= 1 {
         fork.item_buffer.remove(newer_index).unwrap()
     } else {
         let clones_needing_item = fork

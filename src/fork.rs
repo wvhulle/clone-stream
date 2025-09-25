@@ -9,7 +9,7 @@ use std::{
 use futures::Stream;
 use log::{debug, trace, warn};
 
-use crate::{error::Result, registry::CloneRegistry, ring_queue::RingQueue};
+use crate::{registry::CloneRegistry, ring_queue::RingQueue};
 
 /// Maximum number of clones that can be registered simultaneously.
 const MAX_CLONE_COUNT: usize = 65536;
@@ -96,16 +96,6 @@ where
         }
     }
 
-    /// Count the number of active clones
-    pub(crate) fn active_clone_count(&self) -> usize {
-        self.clone_registry.count()
-    }
-
-    /// Register a new clone and return its ID
-    pub(crate) fn register(&mut self) -> Result<usize> {
-        self.clone_registry.register()
-    }
-
     pub(crate) fn remaining_queued_items(&self, clone_id: usize) -> usize {
         (&self.item_buffer)
             .into_iter()
@@ -114,18 +104,14 @@ where
             .count()
     }
 
-    pub(crate) fn has_other_clones_waiting(&self, exclude_clone_id: usize) -> bool {
-        self.clone_registry
-            .has_other_clones_waiting(exclude_clone_id)
-    }
-
     pub(crate) fn should_clone_see_item(&self, clone_id: usize, queue_item_index: usize) -> bool {
         if let Some(state) = self.clone_registry.get_clone_state(clone_id) {
             match state {
                 crate::states::CloneState::AwaitingFirstItem
                 | crate::states::CloneState::AwaitingBaseStream { .. } => true,
                 crate::states::CloneState::AwaitingBaseStreamWithQueueHistory {
-                    last_seen_index, ..
+                    last_seen_index,
+                    ..
                 } => self
                     .item_buffer
                     .is_newer_than(queue_item_index, *last_seen_index),
@@ -134,7 +120,8 @@ where
                 } => !self
                     .item_buffer
                     .is_newer_than(queue_item_index, *unseen_index),
-                crate::states::CloneState::BaseStreamReady | crate::states::CloneState::BaseStreamReadyWithQueueHistory => false,
+                crate::states::CloneState::BaseStreamReady
+                | crate::states::CloneState::BaseStreamReadyWithQueueHistory => false,
             }
         } else {
             false
@@ -147,7 +134,7 @@ where
     }
 
     fn cleanup_unneeded_queue_items(&mut self) {
-        if self.active_clone_count() == 0 {
+        if self.clone_registry.count() == 0 {
             self.item_buffer.clear();
             return;
         }

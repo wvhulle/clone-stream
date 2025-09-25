@@ -58,7 +58,10 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     fn from(mut fork: Fork<BaseStream>) -> Self {
-        let id = fork.register().expect("Failed to register initial clone");
+        let id = fork
+            .clone_registry
+            .register()
+            .expect("Failed to register initial clone");
 
         Self {
             id,
@@ -83,6 +86,7 @@ where
     fn clone(&self) -> Self {
         let mut fork = self.fork.write().expect("Fork lock poisoned during clone");
         let clone_id = fork
+            .clone_registry
             .register()
             .expect("Failed to register clone - clone limit exceeded");
         drop(fork);
