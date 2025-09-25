@@ -70,7 +70,9 @@ where
         let poll_result = current_state.step(clone_id, clone_waker, self);
 
         debug!("Clone {clone_id} transitioned to {current_state:?}.");
-        self.clone_registry.restore(clone_id, current_state);
+        self.clone_registry
+            .restore(clone_id, current_state)
+            .expect("Failed to restore clone state - this should never happen as we just took it");
         poll_result
     }
 
@@ -96,7 +98,7 @@ where
 
     /// Count the number of active clones
     pub(crate) fn active_clone_count(&self) -> usize {
-        self.clone_registry.active_count()
+        self.clone_registry.count()
     }
 
     /// Register a new clone and return its ID
@@ -139,17 +141,6 @@ where
         }
     }
 
-    /// Find queue items that no active clone needs anymore
-    fn find_unneeded_queue_items(&self) -> impl Iterator<Item = usize> {
-        (&self.item_buffer)
-            .into_iter()
-            .filter_map(|(item_index, _)| {
-                let is_needed = (0..self.clone_registry.len())
-                    .any(|clone_id| self.should_clone_see_item(clone_id, item_index));
-                (!is_needed).then_some(item_index)
-            })
-    }
-
     pub(crate) fn unregister(&mut self, clone_id: usize) {
         self.clone_registry.unregister(clone_id);
         self.cleanup_unneeded_queue_items();
@@ -161,12 +152,20 @@ where
             return;
         }
 
-        self.find_unneeded_queue_items()
-            .collect::<Vec<_>>()
+        let items_to_remove: Vec<usize> = (&self.item_buffer)
             .into_iter()
-            .for_each(|item_index| {
-                self.item_buffer.remove(item_index);
-            });
+            .filter_map(|(item_index, _)| {
+                let is_needed = self
+                    .clone_registry
+                    .iter_active_with_ids()
+                    .any(|(clone_id, _)| self.should_clone_see_item(clone_id, item_index));
+                (!is_needed).then_some(item_index)
+            })
+            .collect();
+
+        for item_index in items_to_remove {
+            self.item_buffer.remove(item_index);
+        }
     }
 }
 

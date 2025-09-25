@@ -31,20 +31,20 @@ where
         if self.capacity == 0 {
             return;
         }
-        
+
         // If queue is at capacity, remove oldest item first
-        if self.items.len() >= self.capacity {
-            if let Some(oldest) = self.oldest {
-                self.items.remove(&oldest);
-                self.oldest = self.next_ring_index(oldest);
-            }
+        if self.items.len() >= self.capacity
+            && let Some(oldest) = self.oldest
+        {
+            self.items.remove(&oldest);
+            self.oldest = self.next_ring_index(oldest);
         }
-        
+
         if let Some(newest) = self.newest {
             let next_index = (newest + 1) % self.capacity;
             self.items.insert(next_index, item);
             self.newest = Some(next_index);
-            
+
             // Update oldest if this is the first item after being empty
             if self.oldest.is_none() {
                 self.oldest = Some(next_index);
@@ -98,11 +98,7 @@ where
     }
 
     pub fn oldest_index(&self) -> Option<usize> {
-        if self.is_empty() {
-            None
-        } else {
-            self.oldest
-        }
+        if self.is_empty() { None } else { self.oldest }
     }
 
     pub(crate) fn clear(&mut self) {

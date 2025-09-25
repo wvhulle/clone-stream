@@ -24,9 +24,9 @@ impl CloneRegistry {
     }
 
     pub(crate) fn register(&mut self) -> Result<usize> {
-        if self.active_count() >= self.max_clone_count {
+        if self.count() >= self.max_clone_count {
             return Err(CloneStreamError::MaxClonesExceeded {
-                current_count: self.active_count(),
+                current_count: self.count(),
                 max_allowed: self.max_clone_count,
             });
         }
@@ -60,22 +60,28 @@ impl CloneRegistry {
         self.clones.get_mut(clone_id)?.take()
     }
 
-    pub(crate) fn restore(&mut self, clone_id: usize, state: CloneState) {
-        if let Some(slot) = self.clones.get_mut(clone_id) {
-            *slot = Some(state);
+    pub(crate) fn restore(&mut self, clone_id: usize, state: CloneState) -> Result<()> {
+        if clone_id >= self.clones.len() {
+            warn!("Attempted to restore clone {clone_id} with invalid ID (out of bounds)");
+            return Err(CloneStreamError::InvalidCloneId { clone_id });
         }
+
+        if self.clones[clone_id].is_some() {
+            warn!("Attempted to restore clone {clone_id} that is already active");
+            return Err(CloneStreamError::CloneAlreadyActive { clone_id });
+        }
+
+        self.clones[clone_id] = Some(state);
+        trace!("Restored clone {clone_id}");
+        Ok(())
     }
 
     pub(crate) fn exists(&self, clone_id: usize) -> bool {
         clone_id < self.clones.len() && self.clones[clone_id].is_some()
     }
 
-    pub(crate) fn active_count(&self) -> usize {
+    pub(crate) fn count(&self) -> usize {
         self.clones.iter().filter(|s| s.is_some()).count()
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.clones.len()
     }
 
     pub(crate) fn iter_active_with_ids(&self) -> impl Iterator<Item = (usize, &CloneState)> {
