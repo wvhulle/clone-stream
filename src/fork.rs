@@ -122,19 +122,19 @@ where
     pub(crate) fn should_clone_see_item(&self, clone_id: usize, queue_item_index: usize) -> bool {
         if let Some(state) = self.clone_registry.get_clone_state(clone_id) {
             match state {
-                crate::states::CloneState::Initial
-                | crate::states::CloneState::QueueEmptyPending { .. } => true,
-                crate::states::CloneState::AllSeenPending {
+                crate::states::CloneState::AwaitingFirstItem
+                | crate::states::CloneState::AwaitingBaseStream { .. } => true,
+                crate::states::CloneState::AwaitingBaseStreamWithQueueHistory {
                     last_seen_index, ..
                 } => self
                     .item_buffer
                     .is_newer_than(queue_item_index, *last_seen_index),
-                crate::states::CloneState::PreviouslySawOnQueue {
+                crate::states::CloneState::ProcessingQueue {
                     last_seen_queue_index: unseen_index,
                 } => !self
                     .item_buffer
                     .is_newer_than(queue_item_index, *unseen_index),
-                crate::states::CloneState::QueueEmpty | crate::states::CloneState::AllSeen => false,
+                crate::states::CloneState::BaseStreamReady | crate::states::CloneState::BaseStreamReadyWithQueueHistory => false,
             }
         } else {
             false
