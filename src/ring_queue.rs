@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use log::trace;
+
 /// A ring buffer queue that wraps around at a maximum capacity.
 #[derive(Debug)]
 pub(crate) struct RingQueue<T>
@@ -29,17 +31,26 @@ where
         if self.capacity == 0 {
             return;
         }
+        
+        // If queue is at capacity, remove oldest item first
+        if self.items.len() >= self.capacity {
+            if let Some(oldest) = self.oldest {
+                self.items.remove(&oldest);
+                self.oldest = self.next_ring_index(oldest);
+            }
+        }
+        
         if let Some(newest) = self.newest {
             let next_index = (newest + 1) % self.capacity;
-            if self.items.contains_key(&next_index) {
-                self.items.remove(&next_index);
-                if self.oldest == Some(next_index) {
-                    self.oldest = self.next_ring_index(next_index);
-                }
-            }
             self.items.insert(next_index, item);
             self.newest = Some(next_index);
+            
+            // Update oldest if this is the first item after being empty
+            if self.oldest.is_none() {
+                self.oldest = Some(next_index);
+            }
         } else {
+            // First item
             self.newest = Some(0);
             self.oldest = Some(0);
             self.items.insert(0, item);
@@ -86,6 +97,14 @@ where
         self.items.is_empty()
     }
 
+    pub fn oldest_index(&self) -> Option<usize> {
+        if self.is_empty() {
+            None
+        } else {
+            self.oldest
+        }
+    }
+
     pub(crate) fn clear(&mut self) {
         self.items.clear();
         self.oldest = None;
@@ -96,7 +115,8 @@ where
         self.items.get(&index)
     }
 
-    /// Checks if an index is within the valid range of the ring buffer.boundary.
+    /// Checks if an index is within the valid range of the ring
+    /// buffer.boundary.
     fn is_valid_index(&self, index: usize) -> bool {
         if let (Some(oldest), Some(newest)) = (self.oldest, self.newest) {
             (oldest <= newest && index >= oldest && index <= newest)
@@ -106,7 +126,8 @@ where
         }
     }
 
-    /// Calculates the logical distance from one index to another in ring buffer order.
+    /// Calculates the logical distance from one index to another in ring buffer
+    /// order.
     fn ring_distance(&self, from: usize, to: usize) -> Option<usize> {
         if self.is_valid_index(from) && self.is_valid_index(to) {
             let (oldest, newest) = (self.oldest?, self.newest?);
@@ -144,12 +165,16 @@ where
             .is_some_and(|distance| distance > 0)
     }
 
-    /// Returns the first valid index newer than `current_index`, or None if no such index exists.
+    /// Returns the first valid index newer than `current_index`, or None if no
+    /// such index exists.
     pub(crate) fn find_next_newer_index(&self, current_index: usize) -> Option<usize> {
         let (oldest, newest) = (self.oldest?, self.newest?);
-
+        trace!("Finding next newer index after {current_index}, oldest={oldest}, newest={newest}");
+        trace!("Current queue has length {:?}", self.items.len());
         // Check consecutive index first
         let next_consecutive = (current_index + 1) % self.capacity;
+
+        trace!("Next consecutive index is {next_consecutive}");
         if self.items.contains_key(&next_consecutive)
             && self.is_newer_than(next_consecutive, current_index)
         {
@@ -165,7 +190,8 @@ where
             })
     }
 
-    /// Generate an iterator of valid indices starting from a given index in ring order
+    /// Generate an iterator of valid indices starting from a given index in
+    /// ring order
     fn ring_indices_from(&self, start: usize) -> impl Iterator<Item = usize> + '_ {
         (0..self.capacity)
             .map(move |offset| (start + offset) % self.capacity)

@@ -101,6 +101,7 @@ where
     type Item = BaseStream::Item;
 
     fn poll_next(self: Pin<&mut Self>, current_task: &mut Context) -> Poll<Option<Self::Item>> {
+        trace!("Polling next item for clone {}.", self.id);
         let waker = current_task.waker();
         let mut fork = self
             .fork

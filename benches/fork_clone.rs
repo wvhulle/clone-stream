@@ -2,12 +2,13 @@
 
 mod common;
 
+use std::time::Duration;
+
 use common::{
     BenchmarkConfig, CLONE_COUNTS, PerformanceStats, Pipe, benchmark_configurations, test_items,
 };
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use futures::{StreamExt, future, stream};
-use std::time::Duration;
 
 /// Combined benchmark testing clone count x item count combinations
 fn benchmark_item_throughput(c: &mut Criterion) {
@@ -50,11 +51,9 @@ fn benchmark_item_throughput(c: &mut Criterion) {
                                     })
                                     .collect::<Vec<_>>()
                             })
-                            .pipe(future::join_all)
+                            .pipe(future::try_join_all)
                             .await
-                            .into_iter()
-                            .map(Result::unwrap)
-                            .sum::<usize>()
+                            .pipe(Result::unwrap)
                             .pipe(black_box)
                     });
 
