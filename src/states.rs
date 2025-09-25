@@ -85,7 +85,6 @@ impl CloneState {
 }
 
 impl CloneState {
-    /// Main state machine step - processes the clone's current state
     #[inline]
     pub(crate) fn step<BaseStream>(
         &mut self,
@@ -200,6 +199,7 @@ impl CloneState {
     }
 }
 
+#[inline]
 pub(crate) fn poll_base_stream<BaseStream>(
     clone_id: usize,
     waker: &Waker,
@@ -229,6 +229,7 @@ where
     }
 }
 
+#[inline]
 fn poll_base_with_queue_check<BaseStream>(
     clone_id: usize,
     waker: &Waker,
@@ -259,6 +260,7 @@ where
     }
 }
 
+#[inline]
 fn next_pending_state<BaseStream>(waker: &Waker, fork: &Fork<BaseStream>) -> CloneState
 where
     BaseStream: Stream<Item: Clone>,
@@ -316,43 +318,28 @@ where
 #[inline]
 fn process_newer_queue_item<BaseStream>(
     fork: &mut Fork<BaseStream>,
-    current_index: usize,
+    last_seen_queue_index: usize,
 ) -> Option<(usize, Option<BaseStream::Item>)>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    let newer_index = fork.item_buffer.find_next_newer_index(current_index)?;
-    let item = get_queue_item_optimally(fork, newer_index);
+    let newer_index = fork
+        .item_buffer
+        .find_next_newer_index(last_seen_queue_index)?;
+
+    let item = if fork.active_clone_count() <= 1 {
+        fork.item_buffer.remove(newer_index).unwrap()
+    } else {
+        let clones_needing_item = fork
+            .clone_registry
+            .iter_active_with_ids()
+            .filter(|(clone_id, _)| fork.should_clone_see_item(*clone_id, newer_index))
+            .count();
+        match clones_needing_item {
+            0 | 1 => fork.item_buffer.remove(newer_index).unwrap(),
+            _ => fork.item_buffer.get(newer_index).unwrap().clone(),
+        }
+    };
+
     Some((newer_index, item))
-}
-
-#[inline]
-fn get_queue_item_optimally<BaseStream>(
-    fork: &mut Fork<BaseStream>,
-    index: usize,
-) -> Option<BaseStream::Item>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    if fork.active_clone_count() <= 1 {
-        return fork.item_buffer.remove(index).unwrap();
-    }
-
-    let clones_needing_item = count_clones_needing_item(fork, index);
-
-    match clones_needing_item {
-        0 | 1 => fork.item_buffer.remove(index).unwrap(),
-        _ => fork.item_buffer.get(index).unwrap().clone(),
-    }
-}
-
-#[inline]
-fn count_clones_needing_item<BaseStream>(fork: &Fork<BaseStream>, index: usize) -> usize
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fork.clone_registry
-        .iter_active_with_ids()
-        .filter(|(clone_id, _)| fork.should_clone_see_item(*clone_id, index))
-        .count()
 }
