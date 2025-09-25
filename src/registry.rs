@@ -24,17 +24,17 @@ impl CloneRegistry {
     }
 
     pub(crate) fn register(&mut self) -> Result<usize> {
-        if let Some(reused_id) = self.available_indices.pop() {
-            trace!("Registering clone {reused_id} (reused index).");
-            self.clones[reused_id] = Some(CloneState::default());
-            return Ok(reused_id);
-        }
-
         if self.active_count() >= self.max_clone_count {
             return Err(CloneStreamError::MaxClonesExceeded {
                 current_count: self.active_count(),
                 max_allowed: self.max_clone_count,
             });
+        }
+
+        if let Some(reused_id) = self.available_indices.pop() {
+            trace!("Registering clone {reused_id} (reused index).");
+            self.clones[reused_id] = Some(CloneState::default());
+            return Ok(reused_id);
         }
 
         let clone_id = self.clones.len();
@@ -111,5 +111,4 @@ impl CloneRegistry {
     pub(crate) fn get_clone_state(&self, clone_id: usize) -> Option<&CloneState> {
         self.clones.get(clone_id).and_then(|opt| opt.as_ref())
     }
-
 }
