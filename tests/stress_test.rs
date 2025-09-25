@@ -1,7 +1,7 @@
 use core::time::Duration;
 use std::sync::Arc;
 
-use clone_stream::{CloneStream, clean_log::log};
+use clone_stream::CloneStream;
 use futures::{FutureExt, SinkExt, StreamExt, future::try_join_all, join, stream};
 use log::{info, warn};
 use tokio::time::{Instant, sleep_until};

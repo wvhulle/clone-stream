@@ -9,6 +9,14 @@ pub enum CloneStreamError {
         max_allowed: usize,
         current_count: usize,
     },
+    /// Invalid clone ID provided
+    InvalidCloneId {
+        clone_id: usize,
+    },
+    /// Clone is already active
+    CloneAlreadyActive {
+        clone_id: usize,
+    },
 }
 
 impl fmt::Display for CloneStreamError {
@@ -21,6 +29,12 @@ impl fmt::Display for CloneStreamError {
                 f,
                 "Maximum number of clones exceeded: {current_count} >= {max_allowed}"
             ),
+            CloneStreamError::InvalidCloneId { clone_id } => {
+                write!(f, "Invalid clone ID: {clone_id}")
+            }
+            CloneStreamError::CloneAlreadyActive { clone_id } => {
+                write!(f, "Clone {clone_id} is already active")
+            }
         }
     }
 }

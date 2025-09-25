@@ -9,7 +9,7 @@ use std::{
 use futures::Stream;
 use log::{debug, trace, warn};
 
-use crate::{error::Result, registry::CloneRegistry, ring_queue::RingQueue};
+use crate::{registry::CloneRegistry, ring_queue::RingQueue};
 
 /// Maximum number of clones that can be registered simultaneously.
 const MAX_CLONE_COUNT: usize = 65536;
@@ -39,7 +39,7 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     pub(crate) base_stream: Pin<Box<BaseStream>>,
-    pub(crate) queue: RingQueue<Option<BaseStream::Item>>,
+    pub(crate) item_buffer: RingQueue<Option<BaseStream::Item>>,
     pub(crate) clone_registry: CloneRegistry,
 }
 
@@ -55,7 +55,7 @@ where
         Self {
             base_stream: Box::pin(base_stream),
             clone_registry: CloneRegistry::new(config.max_clone_count),
-            queue: RingQueue::new(config.max_queue_size),
+            item_buffer: RingQueue::new(config.max_queue_size),
         }
     }
 
@@ -70,7 +70,9 @@ where
         let poll_result = current_state.step(clone_id, clone_waker, self);
 
         debug!("Clone {clone_id} transitioned to {current_state:?}.");
-        self.clone_registry.restore(clone_id, current_state);
+        self.clone_registry
+            .restore(clone_id, current_state)
+            .expect("Failed to restore clone state - this should never happen as we just took it");
         poll_result
     }
 
@@ -94,54 +96,36 @@ where
         }
     }
 
-    /// Count the number of active clones
-    pub(crate) fn active_clone_count(&self) -> usize {
-        self.clone_registry.active_count()
-    }
-
-    /// Register a new clone and return its ID
-    pub(crate) fn register(&mut self) -> Result<usize> {
-        self.clone_registry.register()
-    }
-
     pub(crate) fn remaining_queued_items(&self, clone_id: usize) -> usize {
-        (&self.queue)
+        (&self.item_buffer)
             .into_iter()
             .map(|(item_index, _)| item_index)
             .filter(|&item_index| self.should_clone_see_item(clone_id, item_index))
             .count()
     }
 
-    pub(crate) fn has_other_clones_waiting(&self, exclude_clone_id: usize) -> bool {
-        self.clone_registry
-            .has_other_clones_waiting(exclude_clone_id)
-    }
-
     pub(crate) fn should_clone_see_item(&self, clone_id: usize, queue_item_index: usize) -> bool {
         if let Some(state) = self.clone_registry.get_clone_state(clone_id) {
             match state {
-                crate::states::CloneState::Initial
-                | crate::states::CloneState::QueueEmptyPending { .. } => true,
-                crate::states::CloneState::AllSeenPending {
-                    last_seen_index, ..
-                } => self.queue.is_newer_than(queue_item_index, *last_seen_index),
-                crate::states::CloneState::PreviouslySawOnQueue {
+                crate::states::CloneState::AwaitingFirstItem
+                | crate::states::CloneState::AwaitingBaseStream { .. } => true,
+                crate::states::CloneState::AwaitingBaseStreamWithQueueHistory {
+                    last_seen_index,
+                    ..
+                } => self
+                    .item_buffer
+                    .is_newer_than(queue_item_index, *last_seen_index),
+                crate::states::CloneState::ProcessingQueue {
                     last_seen_queue_index: unseen_index,
-                } => !self.queue.is_newer_than(queue_item_index, *unseen_index),
-                crate::states::CloneState::QueueEmpty | crate::states::CloneState::AllSeen => false,
+                } => !self
+                    .item_buffer
+                    .is_newer_than(queue_item_index, *unseen_index),
+                crate::states::CloneState::BaseStreamReady
+                | crate::states::CloneState::BaseStreamReadyWithQueueHistory => false,
             }
         } else {
             false
         }
-    }
-
-    /// Find queue items that no active clone needs anymore
-    fn find_unneeded_queue_items(&self) -> impl Iterator<Item = usize> {
-        (&self.queue).into_iter().filter_map(|(item_index, _)| {
-            let is_needed = (0..self.clone_registry.len())
-                .any(|clone_id| self.should_clone_see_item(clone_id, item_index));
-            (!is_needed).then_some(item_index)
-        })
     }
 
     pub(crate) fn unregister(&mut self, clone_id: usize) {
@@ -150,17 +134,25 @@ where
     }
 
     fn cleanup_unneeded_queue_items(&mut self) {
-        if self.active_clone_count() == 0 {
-            self.queue.clear();
+        if self.clone_registry.count() == 0 {
+            self.item_buffer.clear();
             return;
         }
 
-        self.find_unneeded_queue_items()
-            .collect::<Vec<_>>()
+        let items_to_remove: Vec<usize> = (&self.item_buffer)
             .into_iter()
-            .for_each(|item_index| {
-                self.queue.remove(item_index);
-            });
+            .filter_map(|(item_index, _)| {
+                let is_needed = self
+                    .clone_registry
+                    .iter_active_with_ids()
+                    .any(|(clone_id, _)| self.should_clone_see_item(clone_id, item_index));
+                (!is_needed).then_some(item_index)
+            })
+            .collect();
+
+        for item_index in items_to_remove {
+            self.item_buffer.remove(item_index);
+        }
     }
 }
 

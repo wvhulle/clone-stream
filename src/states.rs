@@ -15,52 +15,56 @@ use crate::Fork;
 /// behave when polled.
 #[derive(Clone, Debug)]
 pub(crate) enum CloneState {
-    Initial,
-    QueueEmpty,
+    AwaitingFirstItem,
+    BaseStreamReady,
 
-    QueueEmptyPending {
+    AwaitingBaseStream {
         waker: Waker,
     },
 
-    AllSeenPending {
+    AwaitingBaseStreamWithQueueHistory {
         waker: Waker,
         last_seen_index: usize,
     },
 
-    AllSeen,
-    PreviouslySawOnQueue {
+    BaseStreamReadyWithQueueHistory,
+    ProcessingQueue {
         last_seen_queue_index: usize,
     },
 }
 
 impl Default for CloneState {
     fn default() -> Self {
-        Self::Initial
+        Self::AwaitingFirstItem
     }
 }
+
+use CloneState::{
+    AwaitingBaseStream, AwaitingBaseStreamWithQueueHistory, AwaitingFirstItem, BaseStreamReady,
+    BaseStreamReadyWithQueueHistory, ProcessingQueue,
+};
 
 impl CloneState {
     pub(crate) fn should_still_see_base_item(&self) -> bool {
         trace!("Checking if clone in state {self:?} should still see base item");
+
         match self {
-            CloneState::QueueEmptyPending { .. }
-            | CloneState::AllSeenPending { .. }
-            | CloneState::QueueEmpty => true,
-            CloneState::Initial | CloneState::AllSeen | CloneState::PreviouslySawOnQueue { .. } => {
-                false
-            }
+            AwaitingBaseStream { .. }
+            | AwaitingBaseStreamWithQueueHistory { .. }
+            | BaseStreamReady => true,
+            AwaitingFirstItem | BaseStreamReadyWithQueueHistory | ProcessingQueue { .. } => false,
         }
     }
 
     pub(crate) fn waker(&self) -> Option<Waker> {
         match self {
-            CloneState::QueueEmptyPending { waker } | CloneState::AllSeenPending { waker, .. } => {
+            AwaitingBaseStream { waker } | AwaitingBaseStreamWithQueueHistory { waker, .. } => {
                 Some(waker.clone())
             }
-            CloneState::Initial
-            | CloneState::QueueEmpty
-            | CloneState::AllSeen
-            | CloneState::PreviouslySawOnQueue { .. } => None,
+            AwaitingFirstItem
+            | BaseStreamReady
+            | BaseStreamReadyWithQueueHistory
+            | ProcessingQueue { .. } => None,
         }
     }
 
@@ -85,7 +89,6 @@ impl CloneState {
 }
 
 impl CloneState {
-    /// Main state machine step - processes the clone's current state
     #[inline]
     pub(crate) fn step<BaseStream>(
         &mut self,
@@ -97,27 +100,18 @@ impl CloneState {
         BaseStream: Stream<Item: Clone>,
     {
         match self {
-            CloneState::Initial => {
-                debug!("Clone {clone_id}: Initial poll");
-                self.transition_on_poll(
-                    poll_base_with_queue_check(clone_id, waker, fork),
-                    CloneState::QueueEmpty,
-                    next_pending_state(waker, fork),
-                )
-            }
-            CloneState::QueueEmpty => self.transition_on_poll(
+            AwaitingFirstItem | BaseStreamReady => self.transition_on_poll(
                 poll_base_with_queue_check(clone_id, waker, fork),
-                CloneState::QueueEmpty,
+                BaseStreamReady,
                 next_pending_state(waker, fork),
             ),
-            CloneState::QueueEmptyPending { .. } => {
-                debug!("Clone {clone_id}: Queue used to be empty, check if it still is");
-                if fork.queue.is_empty() {
+            AwaitingBaseStream { .. } => {
+                if fork.item_buffer.is_empty() {
                     debug!("Clone {clone_id}: Queue still empty, polling base stream");
                     self.transition_on_poll(
                         poll_base_with_queue_check(clone_id, waker, fork),
-                        CloneState::QueueEmpty,
-                        CloneState::QueueEmptyPending {
+                        BaseStreamReady,
+                        AwaitingBaseStream {
                             waker: waker.clone(),
                         },
                     )
@@ -125,51 +119,51 @@ impl CloneState {
                     debug!("Clone {clone_id}: Queue now has items, processing oldest");
                     let (oldest_queue_index, item) =
                         pop_or_clone_oldest_unseen_queue_item(fork, clone_id);
-                    *self = CloneState::PreviouslySawOnQueue {
+                    *self = ProcessingQueue {
                         last_seen_queue_index: oldest_queue_index,
                     };
                     Poll::Ready(item)
                 }
             }
-            CloneState::AllSeenPending {
+            AwaitingBaseStreamWithQueueHistory {
                 last_seen_index, ..
             } => {
                 let last_seen_index = *last_seen_index;
                 if let Some((newer_index, item)) = process_newer_queue_item(fork, last_seen_index) {
-                    *self = CloneState::PreviouslySawOnQueue {
+                    *self = ProcessingQueue {
                         last_seen_queue_index: newer_index,
                     };
                     Poll::Ready(item)
                 } else {
                     self.transition_on_poll(
                         poll_base_stream(clone_id, waker, fork),
-                        CloneState::AllSeen,
-                        CloneState::AllSeenPending {
+                        BaseStreamReadyWithQueueHistory,
+                        AwaitingBaseStreamWithQueueHistory {
                             waker: waker.clone(),
                             last_seen_index,
                         },
                     )
                 }
             }
-            CloneState::AllSeen => {
-                let pending_state = if let Some(oldest_index) = fork.queue.oldest_index() {
-                    CloneState::AllSeenPending {
+            BaseStreamReadyWithQueueHistory => {
+                let pending_state = if let Some(oldest_index) = fork.item_buffer.oldest_index() {
+                    AwaitingBaseStreamWithQueueHistory {
                         waker: waker.clone(),
                         last_seen_index: oldest_index,
                     }
                 } else {
-                    CloneState::QueueEmptyPending {
+                    AwaitingBaseStream {
                         waker: waker.clone(),
                     }
                 };
 
                 self.transition_on_poll(
                     poll_base_stream(clone_id, waker, fork),
-                    CloneState::AllSeen,
+                    BaseStreamReadyWithQueueHistory,
                     pending_state,
                 )
             }
-            CloneState::PreviouslySawOnQueue {
+            ProcessingQueue {
                 last_seen_queue_index,
             } => {
                 let last_seen_queue_index = *last_seen_queue_index;
@@ -180,16 +174,18 @@ impl CloneState {
                     process_newer_queue_item(fork, last_seen_queue_index)
                 {
                     trace!("Clone {clone_id}: Found newer item at {newer_index}");
-                    *self = CloneState::PreviouslySawOnQueue {
+                    *self = ProcessingQueue {
                         last_seen_queue_index: newer_index,
                     };
                     Poll::Ready(item)
                 } else {
-                    trace!("Clone {clone_id}: No newer item, transitioning to AllSeen");
+                    trace!(
+                        "Clone {clone_id}: No newer item, transitioning to BaseStreamReadyWithQueueHistory"
+                    );
                     self.transition_on_poll(
                         poll_base_stream(clone_id, waker, fork),
-                        CloneState::AllSeen,
-                        CloneState::AllSeenPending {
+                        BaseStreamReadyWithQueueHistory,
+                        AwaitingBaseStreamWithQueueHistory {
                             waker: waker.clone(),
                             last_seen_index: last_seen_queue_index,
                         },
@@ -200,6 +196,7 @@ impl CloneState {
     }
 }
 
+#[inline]
 pub(crate) fn poll_base_stream<BaseStream>(
     clone_id: usize,
     waker: &Waker,
@@ -214,9 +211,9 @@ where
     {
         Poll::Ready(item) => {
             trace!("Base stream ready with item");
-            if fork.has_other_clones_waiting(clone_id) {
+            if fork.clone_registry.has_other_clones_waiting(clone_id) {
                 trace!("Queuing item for other waiting clones");
-                fork.queue.push(item.clone());
+                fork.item_buffer.push(item.clone());
             } else {
                 trace!("No other clones waiting, not queuing item");
             }
@@ -229,6 +226,7 @@ where
     }
 }
 
+#[inline]
 fn poll_base_with_queue_check<BaseStream>(
     clone_id: usize,
     waker: &Waker,
@@ -244,9 +242,9 @@ where
         Poll::Ready(item) => {
             trace!("Base stream ready with item");
 
-            if fork.has_other_clones_waiting(clone_id) {
+            if fork.clone_registry.has_other_clones_waiting(clone_id) {
                 trace!("Queuing item for other interested clones");
-                fork.queue.push(item.clone());
+                fork.item_buffer.push(item.clone());
             } else {
                 trace!("No other clones need this item");
             }
@@ -259,21 +257,23 @@ where
     }
 }
 
+#[inline]
 fn next_pending_state<BaseStream>(waker: &Waker, fork: &Fork<BaseStream>) -> CloneState
 where
     BaseStream: Stream<Item: Clone>,
 {
-    if fork.queue.is_empty() {
-        CloneState::QueueEmptyPending {
+    use CloneState::{AwaitingBaseStream, AwaitingBaseStreamWithQueueHistory};
+    if fork.item_buffer.is_empty() {
+        AwaitingBaseStream {
             waker: waker.clone(),
         }
-    } else if let Some(newest_index) = fork.queue.newest {
-        CloneState::AllSeenPending {
+    } else if let Some(newest_index) = fork.item_buffer.newest {
+        AwaitingBaseStreamWithQueueHistory {
             waker: waker.clone(),
             last_seen_index: newest_index,
         }
     } else {
-        CloneState::QueueEmptyPending {
+        AwaitingBaseStream {
             waker: waker.clone(),
         }
     }
@@ -288,7 +288,7 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     let previous_occupied_oldest_queue_index = fork
-        .queue
+        .item_buffer
         .oldest_index()
         .expect("Queue reported non-empty but has no oldest index - this is a bug in RingQueue");
 
@@ -302,12 +302,12 @@ where
             });
 
     let oldest_queue_item = if other_clones_want_item {
-        fork.queue
+        fork.item_buffer
             .get(previous_occupied_oldest_queue_index)
             .unwrap()
             .clone()
     } else {
-        fork.queue.pop_oldest().unwrap()
+        fork.item_buffer.pop_oldest().unwrap()
     };
 
     (previous_occupied_oldest_queue_index, oldest_queue_item)
@@ -316,43 +316,28 @@ where
 #[inline]
 fn process_newer_queue_item<BaseStream>(
     fork: &mut Fork<BaseStream>,
-    current_index: usize,
+    last_seen_queue_index: usize,
 ) -> Option<(usize, Option<BaseStream::Item>)>
 where
     BaseStream: Stream<Item: Clone>,
 {
-    let newer_index = fork.queue.find_next_newer_index(current_index)?;
-    let item = get_queue_item_optimally(fork, newer_index);
+    let newer_index = fork
+        .item_buffer
+        .find_next_newer_index(last_seen_queue_index)?;
+
+    let item = if fork.clone_registry.count() <= 1 {
+        fork.item_buffer.remove(newer_index).unwrap()
+    } else {
+        let clones_needing_item = fork
+            .clone_registry
+            .iter_active_with_ids()
+            .filter(|(clone_id, _)| fork.should_clone_see_item(*clone_id, newer_index))
+            .count();
+        match clones_needing_item {
+            0 | 1 => fork.item_buffer.remove(newer_index).unwrap(),
+            _ => fork.item_buffer.get(newer_index).unwrap().clone(),
+        }
+    };
+
     Some((newer_index, item))
-}
-
-#[inline]
-fn get_queue_item_optimally<BaseStream>(
-    fork: &mut Fork<BaseStream>,
-    index: usize,
-) -> Option<BaseStream::Item>
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    if fork.active_clone_count() <= 1 {
-        return fork.queue.remove(index).unwrap();
-    }
-
-    let clones_needing_item = count_clones_needing_item(fork, index);
-
-    match clones_needing_item {
-        0 | 1 => fork.queue.remove(index).unwrap(),
-        _ => fork.queue.get(index).unwrap().clone(),
-    }
-}
-
-#[inline]
-fn count_clones_needing_item<BaseStream>(fork: &Fork<BaseStream>, index: usize) -> usize
-where
-    BaseStream: Stream<Item: Clone>,
-{
-    fork.clone_registry
-        .iter_active_with_ids()
-        .filter(|(clone_id, _)| fork.should_clone_see_item(*clone_id, index))
-        .count()
 }

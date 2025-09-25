@@ -24,23 +24,23 @@ impl CloneRegistry {
     }
 
     pub(crate) fn register(&mut self) -> Result<usize> {
-        if let Some(reused_id) = self.available_indices.pop() {
-            trace!("Registering clone {reused_id} (reused index).");
-            self.clones[reused_id] = Some(CloneState::default());
-            return Ok(reused_id);
-        }
-
-        if self.active_count() >= self.max_clone_count {
+        if self.count() >= self.max_clone_count {
             return Err(CloneStreamError::MaxClonesExceeded {
-                current_count: self.active_count(),
+                current_count: self.count(),
                 max_allowed: self.max_clone_count,
             });
         }
 
-        let clone_id = self.clones.len();
-        trace!("Registering clone {clone_id} (new index).");
-        self.clones.push(Some(CloneState::default()));
-        Ok(clone_id)
+        if let Some(reused_id) = self.available_indices.pop() {
+            trace!("Registering clone {reused_id} (reused index).");
+            self.clones[reused_id] = Some(CloneState::default());
+            Ok(reused_id)
+        } else {
+            let clone_id = self.clones.len();
+            trace!("Registering clone {clone_id} (new index).");
+            self.clones.push(Some(CloneState::default()));
+            Ok(clone_id)
+        }
     }
 
     pub(crate) fn unregister(&mut self, clone_id: usize) {
@@ -60,22 +60,28 @@ impl CloneRegistry {
         self.clones.get_mut(clone_id)?.take()
     }
 
-    pub(crate) fn restore(&mut self, clone_id: usize, state: CloneState) {
-        if let Some(slot) = self.clones.get_mut(clone_id) {
-            *slot = Some(state);
+    pub(crate) fn restore(&mut self, clone_id: usize, state: CloneState) -> Result<()> {
+        if clone_id >= self.clones.len() {
+            warn!("Attempted to restore clone {clone_id} with invalid ID (out of bounds)");
+            return Err(CloneStreamError::InvalidCloneId { clone_id });
         }
+
+        if self.clones[clone_id].is_some() {
+            warn!("Attempted to restore clone {clone_id} that is already active");
+            return Err(CloneStreamError::CloneAlreadyActive { clone_id });
+        }
+
+        self.clones[clone_id] = Some(state);
+        trace!("Restored clone {clone_id}");
+        Ok(())
     }
 
     pub(crate) fn exists(&self, clone_id: usize) -> bool {
         clone_id < self.clones.len() && self.clones[clone_id].is_some()
     }
 
-    pub(crate) fn active_count(&self) -> usize {
+    pub(crate) fn count(&self) -> usize {
         self.clones.iter().filter(|s| s.is_some()).count()
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.clones.len()
     }
 
     pub(crate) fn iter_active_with_ids(&self) -> impl Iterator<Item = (usize, &CloneState)> {
@@ -111,5 +117,70 @@ impl CloneRegistry {
     pub(crate) fn get_clone_state(&self, clone_id: usize) -> Option<&CloneState> {
         self.clones.get(clone_id).and_then(|opt| opt.as_ref())
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_register_respects_max_clone_limit_with_index_reuse() {
+        let mut registry = CloneRegistry::new(1);
+
+        trace!("Register and immediately unregister to create available_indices");
+        let id1 = registry.register().unwrap();
+        registry.unregister(id1);
+
+        trace!("At this point: count = 0, available_indices = [0]");
+
+        trace!("Register again to get to max capacity");
+        let _id2 = registry.register().unwrap();
+        assert_eq!(
+            registry.count(),
+            1,
+            "Registry should have exactly 1 active clone after registering with reused index"
+        );
+
+        match registry.register() {
+            Ok(_) => panic!("Should have failed - already at max capacity!"),
+            Err(CloneStreamError::MaxClonesExceeded {
+                current_count,
+                max_allowed,
+            }) => {
+                assert_eq!(current_count, 1, "Error should report current count of 1");
+                assert_eq!(max_allowed, 1, "Error should report max allowed of 1");
+            }
+            Err(e) => panic!("Unexpected error: {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_index_reuse_works_when_under_limit() {
+        let mut registry = CloneRegistry::new(2);
+        let a = registry.register().unwrap();
+        let _b = registry.register().unwrap();
+        trace!("Creates available index");
+        registry.unregister(a);
+
+        trace!("Now at count=1, available_indices=[0], max=2");
+        trace!("Should reuse index 0");
+        let _c = registry.register().unwrap();
+        assert_eq!(
+            registry.count(),
+            2,
+            "Registry should have exactly 2 active clones after index reuse"
+        );
+
+        match registry.register() {
+            Ok(_) => panic!("Should have failed - we're at max capacity!"),
+            Err(CloneStreamError::MaxClonesExceeded {
+                current_count,
+                max_allowed,
+            }) => {
+                assert_eq!(current_count, 2, "Error should report current count of 2");
+                assert_eq!(max_allowed, 2, "Error should report max allowed of 2");
+            }
+            Err(e) => panic!("Unexpected error: {e:?}"),
+        }
+    }
 }

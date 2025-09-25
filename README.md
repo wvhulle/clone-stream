@@ -9,11 +9,8 @@ For more background information, see my [slides](https://github.com/wvhulle/stre
 
 ## Installation
 
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-clone-stream = "0.3"
+```bash
+cargo add clone-stream
 ```
 
 ## Documentation
@@ -27,6 +24,8 @@ Run tests:
 ```bash
 cargo test
 ```
+
+Use the `clean_log::log` function for simple display of log messages in tests.
 
 Test run a single benchmark pass:
 
