@@ -208,9 +208,7 @@ impl CloneState {
                     self.handle_initial_state(clone_id, waker, fork)
                 }
             }
-            ProcessingQueue {
-                last_seen_index, ..
-            } => {
+            ProcessingQueue { last_seen_index } => {
                 if let Some(last_seen_index) = last_seen_index {
                     debug!("Clone {clone_id}: processing queue items");
                     let last_seen_index = *last_seen_index;
