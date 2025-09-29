@@ -110,19 +110,28 @@ where
         };
 
         match state {
-            crate::states::CloneState::PollingBaseStream { last_seen_index, .. } => {
+            crate::states::CloneState::PollingBaseStream {
+                last_seen_index, ..
+            } => {
                 if let Some(last_seen_index) = last_seen_index {
-                    debug!("Clone {clone_id}: checking if item {queue_item_index} is newer than last seen {last_seen_index}");
-                    self.item_buffer.is_newer_than(queue_item_index, *last_seen_index)
+                    debug!(
+                        "Clone {clone_id}: checking if item {queue_item_index} is newer than last seen {last_seen_index}"
+                    );
+                    self.item_buffer
+                        .is_strictly_newer_than(queue_item_index, *last_seen_index)
                 } else {
                     debug!("Clone {clone_id}: should see all items");
                     true
                 }
             }
-            crate::states::CloneState::ProcessingQueue { last_seen_index, .. } => {
+            crate::states::CloneState::ProcessingQueue { last_seen_index } => {
                 if let Some(unseen_index) = last_seen_index {
-                    debug!("Clone {clone_id}: processing queue, checking if item {queue_item_index} should be skipped");
-                    !self.item_buffer.is_newer_than(queue_item_index, *unseen_index)
+                    debug!(
+                        "Clone {clone_id}: processing queue, checking if item {queue_item_index} should be skipped"
+                    );
+                    !self
+                        .item_buffer
+                        .is_strictly_newer_than(queue_item_index, *unseen_index)
                 } else {
                     debug!("Clone {clone_id}: initial state, should see items");
                     true
