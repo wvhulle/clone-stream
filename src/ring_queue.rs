@@ -156,7 +156,7 @@ where
             .map(|(k, _)| *k)
     }
 
-    pub(crate) fn is_newer_than(&self, maybe_newer: usize, current: usize) -> bool {
+    pub(crate) fn is_strictly_newer_than(&self, maybe_newer: usize, current: usize) -> bool {
         self.ring_distance(current, maybe_newer)
             .is_some_and(|distance| distance > 0)
     }
@@ -172,17 +172,18 @@ where
 
         trace!("Next consecutive index is {next_consecutive}");
         if self.items.contains_key(&next_consecutive)
-            && self.is_newer_than(next_consecutive, current_index)
+            && self.is_strictly_newer_than(next_consecutive, current_index)
         {
             return Some(next_consecutive);
         }
 
         self.ring_indices_from(oldest)
             .take_while(|&idx| idx != newest)
-            .find(|&idx| self.is_newer_than(idx, current_index))
+            .find(|&idx| self.is_strictly_newer_than(idx, current_index))
             .or_else(|| {
                 // Check newest index last
-                self.is_newer_than(newest, current_index).then_some(newest)
+                self.is_strictly_newer_than(newest, current_index)
+                    .then_some(newest)
             })
     }
 
@@ -276,10 +277,14 @@ mod tests {
     #[test]
     fn test_wraparound_eviction() {
         let mut queue = RingQueue::new(3);
-        
+
         queue.extend(["a", "b", "c", "d"]);
-        
-        assert_eq!(queue.oldest, Some(1), "Oldest should advance after eviction");
+
+        assert_eq!(
+            queue.oldest,
+            Some(1),
+            "Oldest should advance after eviction"
+        );
         assert_eq!(queue.newest, Some(0), "Newest should wrap to index 0");
         assert_eq!(queue.get(0), Some(&"d"), "New item at wrapped index");
     }
@@ -287,41 +292,66 @@ mod tests {
     #[test]
     fn test_ring_iteration_order() {
         let mut queue = RingQueue::new(3);
-        
+
         queue.extend(["a", "b", "c", "d"]);
-        
+
         let items: Vec<_> = queue.into_iter().map(|(_, item)| *item).collect();
-        assert_eq!(items, vec!["b", "c", "d"], "Should iterate from oldest to newest");
+        assert_eq!(
+            items,
+            vec!["b", "c", "d"],
+            "Should iterate from oldest to newest"
+        );
     }
 
     #[test]
     fn test_find_next_newer_index() {
         let mut queue = RingQueue::new(4);
-        
+
         queue.extend(["a", "b", "c", "d", "e"]);
-        
-        assert_eq!(queue.find_next_newer_index(1), Some(2), "Should find next newer after oldest");
-        assert_eq!(queue.find_next_newer_index(2), Some(3), "Should find next in sequence");
-        assert_eq!(queue.find_next_newer_index(3), Some(0), "Should wrap to newest");
+
+        assert_eq!(
+            queue.find_next_newer_index(1),
+            Some(2),
+            "Should find next newer after oldest"
+        );
+        assert_eq!(
+            queue.find_next_newer_index(2),
+            Some(3),
+            "Should find next in sequence"
+        );
+        assert_eq!(
+            queue.find_next_newer_index(3),
+            Some(0),
+            "Should wrap to newest"
+        );
     }
 
     #[test]
     fn test_is_newer_than_with_wraparound() {
         let mut queue = RingQueue::new(4);
-        
+
         queue.extend(["a", "b", "c", "d", "e"]);
-        
-        assert!(queue.is_newer_than(0, 3), "Wrapped newest should be newer than previous");
-        assert!(queue.is_newer_than(2, 1), "Index 2 should be newer than oldest index 1");
-        assert!(queue.is_newer_than(3, 2), "Index 3 should be newer than index 2");
+
+        assert!(
+            queue.is_strictly_newer_than(0, 3),
+            "Wrapped newest should be newer than previous"
+        );
+        assert!(
+            queue.is_strictly_newer_than(2, 1),
+            "Index 2 should be newer than oldest index 1"
+        );
+        assert!(
+            queue.is_strictly_newer_than(3, 2),
+            "Index 3 should be newer than index 2"
+        );
     }
 
     #[test]
     fn test_ring_distance() {
         let mut queue = RingQueue::new(4);
-        
+
         queue.extend(["a", "b", "c", "d", "e"]);
-        
+
         assert_eq!(queue.ring_distance(1, 2), Some(1), "Adjacent distance");
         assert_eq!(queue.ring_distance(3, 0), Some(1), "Wraparound distance");
         assert_eq!(queue.ring_distance(0, 1), Some(1), "Full circle distance");
