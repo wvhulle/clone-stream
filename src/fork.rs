@@ -105,26 +105,29 @@ where
     }
 
     pub(crate) fn should_clone_see_item(&self, clone_id: usize, queue_item_index: usize) -> bool {
-        if let Some(state) = self.clone_registry.get_clone_state(clone_id) {
-            match state {
-                crate::states::CloneState::AwaitingFirstItem
-                | crate::states::CloneState::AwaitingBaseStream { .. } => true,
-                crate::states::CloneState::AwaitingBaseStreamWithQueueHistory {
-                    last_seen_index,
-                    ..
-                } => self
-                    .item_buffer
-                    .is_newer_than(queue_item_index, *last_seen_index),
-                crate::states::CloneState::ProcessingQueue {
-                    last_seen_queue_index: unseen_index,
-                } => !self
-                    .item_buffer
-                    .is_newer_than(queue_item_index, *unseen_index),
-                crate::states::CloneState::BaseStreamReady
-                | crate::states::CloneState::BaseStreamReadyWithQueueHistory => false,
+        let Some(state) = self.clone_registry.get_clone_state(clone_id) else {
+            return false;
+        };
+
+        match state {
+            crate::states::CloneState::PollingBaseStream { last_seen_index, .. } => {
+                if let Some(last_seen_index) = last_seen_index {
+                    debug!("Clone {clone_id}: checking if item {queue_item_index} is newer than last seen {last_seen_index}");
+                    self.item_buffer.is_newer_than(queue_item_index, *last_seen_index)
+                } else {
+                    debug!("Clone {clone_id}: should see all items");
+                    true
+                }
             }
-        } else {
-            false
+            crate::states::CloneState::ProcessingQueue { last_seen_index, .. } => {
+                if let Some(unseen_index) = last_seen_index {
+                    debug!("Clone {clone_id}: processing queue, checking if item {queue_item_index} should be skipped");
+                    !self.item_buffer.is_newer_than(queue_item_index, *unseen_index)
+                } else {
+                    debug!("Clone {clone_id}: initial state, should see items");
+                    true
+                }
+            }
         }
     }
 
