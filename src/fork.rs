@@ -34,7 +34,7 @@ impl Default for ForkConfig {
     }
 }
 
-pub(crate) struct Fork<BaseStream>
+pub struct Fork<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
 {
@@ -105,8 +105,9 @@ where
     }
 
     pub(crate) fn should_clone_see_item(&self, clone_id: usize, queue_item_index: usize) -> bool {
-        if let Some(state) = self.clone_registry.get_clone_state(clone_id) {
-            match state {
+        self.clone_registry
+            .get_clone_state(clone_id)
+            .is_some_and(|state| match state {
                 crate::states::CloneState::AwaitingFirstItem
                 | crate::states::CloneState::AwaitingBaseStream { .. } => true,
                 crate::states::CloneState::AwaitingBaseStreamWithQueueHistory {
@@ -122,10 +123,7 @@ where
                     .is_newer_than(queue_item_index, *unseen_index),
                 crate::states::CloneState::BaseStreamReady
                 | crate::states::CloneState::BaseStreamReadyWithQueueHistory => false,
-            }
-        } else {
-            false
-        }
+            })
     }
 
     pub(crate) fn unregister(&mut self, clone_id: usize) {
@@ -167,7 +165,7 @@ where
     }
 }
 
-pub(crate) struct MultiWaker {
+pub struct MultiWaker {
     wakers: Vec<Waker>,
 }
 

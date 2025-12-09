@@ -1,5 +1,8 @@
-#![allow(clippy::needless_for_each, clippy::cast_precision_loss)]
-
+#![allow(
+    clippy::needless_for_each,
+    clippy::cast_precision_loss,
+    clippy::significant_drop_tightening
+)]
 mod common;
 
 use std::time::Duration;

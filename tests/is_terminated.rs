@@ -23,9 +23,7 @@ fn ready_into_stream() {
 fn two_clones_terminated() {
     let stream = ready(1).into_stream();
 
-    let clone = stream.fork();
-
-    let mut clone = clone.clone();
+    let mut clone = stream.fork();
 
     assert!(!clone.is_terminated());
     assert!(!clone.is_terminated());

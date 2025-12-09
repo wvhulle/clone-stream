@@ -12,6 +12,6 @@ async fn test_clone_count_limit_error() {
 
     let _clone1 = original.clone();
     let _clone2 = original.clone();
-
+    #[allow(clippy::redundant_clone)]
     let _clone3 = original.clone(); // This will panic
 }

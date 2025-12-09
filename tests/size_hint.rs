@@ -22,9 +22,7 @@ fn one_clone_size() {
 fn two_clone_size() {
     let stream = ready(1).into_stream();
 
-    let clone = stream.fork();
-
-    let mut clone = clone.clone();
+    let mut clone = stream.fork();
 
     assert_eq!(clone.size_hint(), (1, Some(1)));
     assert_eq!(clone.size_hint(), (1, Some(1)));

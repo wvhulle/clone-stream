@@ -13,8 +13,9 @@ use crate::Fork;
 /// Each clone maintains its own state to track its position relative to the
 /// base stream and the shared queue. The state determines how the clone should
 /// behave when polled.
-#[derive(Clone, Debug)]
-pub(crate) enum CloneState {
+#[derive(Clone, Debug, Default)]
+pub enum CloneState {
+    #[default]
     AwaitingFirstItem,
     BaseStreamReady,
 
@@ -31,12 +32,6 @@ pub(crate) enum CloneState {
     ProcessingQueue {
         last_seen_queue_index: usize,
     },
-}
-
-impl Default for CloneState {
-    fn default() -> Self {
-        Self::AwaitingFirstItem
-    }
 }
 
 use CloneState::{
@@ -72,8 +67,8 @@ impl CloneState {
     fn transition_on_poll<Item>(
         &mut self,
         poll_result: Poll<Option<Item>>,
-        ready_state: CloneState,
-        pending_state: CloneState,
+        ready_state: Self,
+        pending_state: Self,
     ) -> Poll<Option<Item>> {
         match poll_result {
             Poll::Ready(item) => {
@@ -146,16 +141,15 @@ impl CloneState {
                 }
             }
             BaseStreamReadyWithQueueHistory => {
-                let pending_state = if let Some(oldest_index) = fork.item_buffer.oldest_index() {
-                    AwaitingBaseStreamWithQueueHistory {
+                let pending_state = fork.item_buffer.oldest_index().map_or_else(
+                    || AwaitingBaseStream {
+                        waker: waker.clone(),
+                    },
+                    |oldest_index| AwaitingBaseStreamWithQueueHistory {
                         waker: waker.clone(),
                         last_seen_index: oldest_index,
-                    }
-                } else {
-                    AwaitingBaseStream {
-                        waker: waker.clone(),
-                    }
-                };
+                    },
+                );
 
                 self.transition_on_poll(
                     poll_base_stream(clone_id, waker, fork),
@@ -168,7 +162,8 @@ impl CloneState {
             } => {
                 let last_seen_queue_index = *last_seen_queue_index;
                 trace!(
-                    "Clone {clone_id}: previously a queue item was ready, checking if there is a newer one at {last_seen_queue_index}"
+                    "Clone {clone_id}: previously a queue item was ready, checking if there is a \
+                     newer one at {last_seen_queue_index}"
                 );
                 if let Some((newer_index, item)) =
                     process_newer_queue_item(fork, last_seen_queue_index)
@@ -180,7 +175,8 @@ impl CloneState {
                     Poll::Ready(item)
                 } else {
                     trace!(
-                        "Clone {clone_id}: No newer item, transitioning to BaseStreamReadyWithQueueHistory"
+                        "Clone {clone_id}: No newer item, transitioning to \
+                         BaseStreamReadyWithQueueHistory"
                     );
                     self.transition_on_poll(
                         poll_base_stream(clone_id, waker, fork),
@@ -197,7 +193,7 @@ impl CloneState {
 }
 
 #[inline]
-pub(crate) fn poll_base_stream<BaseStream>(
+pub fn poll_base_stream<BaseStream>(
     clone_id: usize,
     waker: &Waker,
     fork: &mut Fork<BaseStream>,

@@ -1,27 +1,23 @@
 //! # Clone streams with `clone-stream`
 //!
-//! Turn any [`Stream`] into a cloneable stream where each clone receives all
-//! items independently.
+//! Lazy single-threaded stream cloning: items are only cloned when a consumer
+//! actually polls for them.
 //!
 //! The [`CloneStream`] struct implements [`Clone`] + [`Stream`], allowing you
-//! to create multiple independent consumers of the same data. The
-//! [`ForkStream`] trait provides the entry point for converting regular
-//! streams.
+//! to create multiple concurrent consumers. The [`ForkStream`] trait provides
+//! the entry point via the [`fork()`](ForkStream::fork) method.
 //!
-//! # Quick Start
+//! # How It Works
 //!
-//! ```rust
-//! use clone_stream::ForkStream;
-//! use futures::{StreamExt, stream};
+//! Unlike broadcast channels that eagerly clone every item for every
+//! subscriber, this crate clones **on-demand**. Items are delivered only to
+//! clones actively polling when items arrive (poll-time semantics).
 //!
-//! # #[tokio::main]
-//! # async fn main() {
-//! let stream = stream::iter(vec![1, 2, 3]).fork();
-//! let mut clone1 = stream.clone();
-//! let mut clone2 = stream.clone();
-//! // Both clones receive all items independently
-//! # }
-//! ```
+//! # Important: Single-Threaded Runtime Required
+//!
+//! This crate requires single-threaded async runtimes (`current_thread` flavor
+//! or `#[tokio::test]`). The lazy semantics depend on cooperative scheduling;
+//! multi-threaded runtimes cause race conditions.
 pub mod clean_log;
 mod clone;
 mod error;
@@ -82,7 +78,7 @@ where
     BaseStream: Stream<Item: Clone>,
 {
     /// Converts a stream into a cloneable stream.
-    fn from(base_stream: BaseStream) -> CloneStream<BaseStream> {
-        CloneStream::from(Fork::new(base_stream))
+    fn from(base_stream: BaseStream) -> Self {
+        Self::from(Fork::new(base_stream))
     }
 }

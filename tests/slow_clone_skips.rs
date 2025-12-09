@@ -48,7 +48,6 @@ async fn slow_clone_not_miss_cache() {
     let (good_first, good_next) = good_result.expect("clone_0 panicked");
     let (bad_first, bad_next) = bad_result.expect("clone_1 panicked");
 
-
     assert!(
         good_next - good_first == 1,
         "clone_0 should get consecutive items since it does not have a blocking call in between \
@@ -83,7 +82,6 @@ async fn bounded_queue_causes_drops() {
     #[allow(clippy::cast_precision_loss)]
     let avg_misses = total_misses.iter().sum::<usize>() as f64 / NUM_SAMPLES as f64;
 
-
     // The key test: bounded queues should cause some drops under contention
     assert!(
         avg_misses > 0.0,
@@ -93,9 +91,9 @@ async fn bounded_queue_causes_drops() {
     // Most samples should experience drops
     assert!(
         drop_count >= (NUM_SAMPLES / 2),
-        "Most samples should experience drops with bounded queues. {drop_count}/{NUM_SAMPLES} experienced drops"
+        "Most samples should experience drops with bounded queues. {drop_count}/{NUM_SAMPLES} \
+         experienced drops"
     );
-
 }
 
 async fn test_queue_scenario(

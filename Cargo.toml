@@ -8,13 +8,15 @@ license = "MIT"
 name = "clone-stream"
 readme = "README.md"
 repository = "https://github.com/wvhulle/clone-stream"
-rust-version = "1.89.0"
-version = "0.4.0"
+rust-version = "1.86.0"
+version = "0.4.1"
 
 
 [lints.clippy]
 cast_possible_truncation = { level = "allow", priority = 1 }
-pedantic = { level = "warn", priority = 0 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+significant-drop-contention = { level = "allow", priority = 1 }
 
 
 [dependencies]

@@ -8,14 +8,14 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub(crate) struct CloneRegistry {
+pub struct CloneRegistry {
     clones: Vec<Option<CloneState>>,
     available_indices: Vec<usize>,
     max_clone_count: usize,
 }
 
 impl CloneRegistry {
-    pub(crate) fn new(max_clone_count: usize) -> Self {
+    pub(crate) const fn new(max_clone_count: usize) -> Self {
         Self {
             clones: Vec::new(),
             available_indices: Vec::new(),

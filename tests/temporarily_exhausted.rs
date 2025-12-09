@@ -12,7 +12,7 @@ struct TemporarilyExhaustedStream {
 }
 
 impl TemporarilyExhaustedStream {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             counter: AtomicUsize::new(0),
         }

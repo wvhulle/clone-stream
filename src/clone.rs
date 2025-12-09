@@ -9,41 +9,22 @@ use log::trace;
 
 use crate::fork::Fork;
 
-/// A stream that implements `Clone` and returns cloned items from a base
-/// stream.
+/// A cloneable stream that delivers items to consumers polling when items
+/// arrive.
 ///
 /// This is the main type provided by this crate. It wraps any [`Stream`] whose
-/// items implement [`Clone`], allowing the stream itself to be cloned. Each
-/// clone operates independently but shares the same underlying stream data.
+/// items implement [`Clone`], allowing the stream itself to be cloned. Clones
+/// must be polled concurrently to receive items (poll-time semantics).
 ///
-/// # Examples
+/// # Important
 ///
-/// ```rust
-/// use clone_stream::ForkStream;
-/// use futures::{StreamExt, stream};
-///
-/// # #[tokio::main]
-/// # async fn main() {
-/// let stream = stream::iter(vec![1, 2, 3]);
-/// let clone_stream = stream.fork();
-///
-/// // Create multiple clones that can be used independently
-/// let mut clone1 = clone_stream.clone();
-/// let mut clone2 = clone_stream.clone();
-///
-/// // Each clone can be polled independently
-/// let item1 = clone1.next().await;
-/// let item2 = clone2.next().await;
-///
-/// println!("Clone1 got: {:?}, Clone2 got: {:?}", item1, item2);
-/// # }
-/// ```
+/// This type requires a single-threaded async runtime. Clones only receive
+/// items they are actively polling for when the item arrives.
 ///
 /// # Performance
 ///
-/// Items are cached internally until all clones have consumed them. The memory
-/// usage grows with the number of items that haven't been consumed by all
-/// clones yet.
+/// Items are only cloned when a consumer polls, not eagerly for all
+/// subscribers. Memory usage depends on how far behind the slowest consumer is.
 pub struct CloneStream<BaseStream>
 where
     BaseStream: Stream<Item: Clone>,
@@ -121,6 +102,7 @@ where
             .expect("Fork lock poisoned during size_hint");
         let (lower, upper) = fork.size_hint();
         let n_cached = fork.remaining_queued_items(self.id);
+        drop(fork);
         (lower + n_cached, upper.map(|u| u + n_cached))
     }
 }
